@@ -33,6 +33,9 @@ interface Layout {
 }
 
 const LOOKAHEAD = 3.15
+/** Fixed keyboard: A0 (La) through C8 (Do), scaled to fill the full width. */
+const FIXED_CAM_LO = whiteIndex(21)
+const FIXED_CAM_HI = whiteIndex(108) + 1
 
 function makeHand(side: 'left' | 'right'): HandState {
   return {
@@ -64,7 +67,7 @@ function fingerMidis(side: 'left' | 'right', active: number[], home: number): nu
   if (chosen.length === 1) {
     const midi = chosen[0]
     const step = side === 'right' ? 1 : -1
-    return [0, 1, 2, 3, 4].map((finger) => clampMidi(midi + (finger - 2) * 2 * step))
+    return [0, 1, 2, 3, 4].map((finger) => clampMidi(midi + (finger - 2) * step))
   }
   const order = side === 'right' ? chosen : [...chosen].reverse()
   const result = [0, 1, 2, 3, 4].map((finger) => {
@@ -109,7 +112,13 @@ function traceRoundRect(
   ctx.closePath()
 }
 
-function fillFinger(
+const SKIN_DARK: [number, number, number] = [168, 108, 78]
+const SKIN_MID: [number, number, number] = [214, 158, 122]
+const SKIN_LIGHT: [number, number, number] = [236, 196, 164]
+const SKIN_NAIL: [number, number, number] = [244, 220, 204]
+const GLOW: [number, number, number] = [255, 122, 50]
+
+function fillCapsule(
   ctx: CanvasRenderingContext2D,
   x0: number,
   y0: number,
@@ -140,16 +149,46 @@ function fillFinger(
   ctx.fill()
 }
 
+function fingerChain(
+  baseX: number,
+  baseY: number,
+  tipX: number,
+  tipY: number,
+  side: number,
+  isThumb: boolean,
+  pressed: number,
+): Array<{ x: number; y: number; r: number }> {
+  const dx = tipX - baseX
+  const dy = tipY - baseY
+  const bend = (isThumb ? 10 : 16) * (1 - pressed * 0.35)
+  const lateral = side * (isThumb ? 8 : 3)
+  const knukleX = baseX + dx * 0.28 + lateral * 0.2
+  const knukleY = baseY + dy * 0.28 - bend * 0.15
+  const midX = baseX + dx * 0.62 + lateral
+  const midY = baseY + dy * 0.62 - bend
+  const tipRadius = isThumb ? 0.92 : 0.78
+  const midRadius = isThumb ? 1.05 : 0.9
+  const baseRadius = isThumb ? 1.2 : 1.05
+  const unit = Math.max(10, Math.hypot(dx, dy) * 0.12)
+  return [
+    { x: baseX, y: baseY, r: unit * baseRadius },
+    { x: knukleX, y: knukleY, r: unit * midRadius },
+    { x: midX, y: midY, r: unit * tipRadius * 1.05 },
+    { x: tipX, y: tipY, r: unit * tipRadius },
+  ]
+}
+
 export class Visualizer {
   private notes: NoteEvent[] | null = null
   private title = ''
   private showNames = false
   private showHands = true
+  private zoom = false
   private w = 1280
   private h = 720
   private keyboardTop = 500
-  private camLo = 10
-  private camHi = 28
+  private camLo = FIXED_CAM_LO
+  private camHi = FIXED_CAM_HI
   private camReady = false
   private prev = -1
   private sparks: Spark[] = []
@@ -170,6 +209,15 @@ export class Visualizer {
 
   setShowHands(show: boolean) {
     this.showHands = show
+  }
+
+  setZoom(enabled: boolean) {
+    this.zoom = enabled
+    this.camReady = false
+    if (!enabled) {
+      this.camLo = FIXED_CAM_LO
+      this.camHi = FIXED_CAM_HI
+    }
   }
 
   setTitle(title: string) {
@@ -240,6 +288,12 @@ export class Visualizer {
   }
 
   private frameCamera(time: number, dt: number) {
+    if (!this.zoom) {
+      this.camLo = FIXED_CAM_LO
+      this.camHi = FIXED_CAM_HI
+      this.camReady = true
+      return
+    }
     let minMidi = 127
     let maxMidi = 0
     let any = false
@@ -304,27 +358,30 @@ export class Visualizer {
       hand.home += (avg - hand.home) * follow
     }
     const targets = fingerMidis(hand.side, active, hand.home)
-    const glide = hand.ready ? 1 - Math.exp(-12 * dt) : 1
-    const pressGlide = hand.ready ? 1 - Math.exp(-18 * dt) : 1
+    const glide = hand.ready ? 1 - Math.exp(-9 * dt) : 1
+    const pressGlide = hand.ready ? 1 - Math.exp(-16 * dt) : 1
+    const thumbShift = layout.whiteW * (hand.side === 'right' ? -0.28 : 0.28)
     for (let index = 0; index < 5; index++) {
       const midi = targets[index]
       const finger = hand.fingers[index]
       const pressed = sounding.some((playing) => Math.abs(playing - midi) < 0.8) ? 1 : 0
       finger.midi = midi
-      finger.x += (layout.centerX(midi) - finger.x) * glide
+      const tipX = layout.centerX(midi) + (index === 0 ? thumbShift : 0)
+      finger.x += (tipX - finger.x) * glide
       finger.y += (this.fingerY(midi, pressed) - finger.y) * glide
       finger.pressed += (pressed - finger.pressed) * pressGlide
     }
-    const palmTarget = (hand.fingers[1].x + hand.fingers[2].x + hand.fingers[3].x) / 3
-    const palmGlide = hand.ready ? 1 - Math.exp(-7 * dt) : 1
+    const palmTarget =
+      hand.fingers[1].x * 0.25 + hand.fingers[2].x * 0.45 + hand.fingers[3].x * 0.3 + (hand.side === 'right' ? 6 : -6)
+    const palmGlide = hand.ready ? 1 - Math.exp(-5.5 * dt) : 1
     hand.palmX += (palmTarget - hand.palmX) * palmGlide
     hand.ready = true
   }
 
   private fingerY(midi: number, pressed: number): number {
     const whiteH = this.h - this.keyboardTop
-    const reach = isBlack(midi) ? 0.4 : 0.66
-    return this.keyboardTop + whiteH * reach + pressed * Math.min(14, whiteH * 0.035)
+    const reach = isBlack(midi) ? 0.36 : 0.58
+    return this.keyboardTop + whiteH * reach + pressed * Math.min(18, whiteH * 0.05)
   }
 
   private activeNotes(time: number): Map<number, NoteEvent> {
@@ -404,25 +461,33 @@ export class Visualizer {
 
     for (let midi = 21; midi <= 108; midi++) {
       if (isBlack(midi)) continue
-      const x = (whiteIndex(midi) - this.camLo) * layout.whiteW
-      if (x > this.w || x + layout.whiteW < 0) continue
+      const index = whiteIndex(midi)
+      const x = (index - this.camLo) * layout.whiteW
+      const nextX = (index + 1 - this.camLo) * layout.whiteW
+      if (nextX < 0 || x > this.w) continue
+      const left = Math.max(0, x)
+      const right = Math.min(this.w, nextX)
+      const keyW = right - left
+      if (keyW <= 0) continue
       const pressed = active.has(midi)
       const depress = pressed ? 7 : 0
       const y = top + depress
       const height = whiteH - depress
-      const gradient = ctx.createLinearGradient(x, y, x, y + height)
+      const gradient = ctx.createLinearGradient(left, y, left, y + height)
       gradient.addColorStop(0, pressed ? '#fff6ee' : '#f4f4f2')
       gradient.addColorStop(0.12, '#ffffff')
       gradient.addColorStop(0.7, '#eeedeb')
       gradient.addColorStop(1, '#d5d3d0')
       ctx.fillStyle = gradient
-      ctx.fillRect(x + 1, y, Math.max(1, layout.whiteW - 2), height)
-      ctx.fillStyle = 'rgba(0,0,0,0.16)'
-      ctx.fillRect(x + layout.whiteW - 3, y, 2, height)
+      ctx.fillRect(left, y, keyW, height)
+      if (right < this.w - 0.5) {
+        ctx.fillStyle = 'rgba(0,0,0,0.16)'
+        ctx.fillRect(right - 2, y, 2, height)
+      }
       ctx.fillStyle = 'rgba(255,255,255,0.75)'
-      ctx.fillRect(x + 2, y, Math.max(1, layout.whiteW - 6), 3)
+      ctx.fillRect(left, y, keyW, 3)
       const note = active.get(midi)
-      if (note) this.paintKey(x + 1, y, Math.max(1, layout.whiteW - 2), height * 0.72, note)
+      if (note) this.paintKey(left, y, keyW, height * 0.72, note)
     }
 
     for (let midi = 21; midi <= 108; midi++) {
@@ -567,59 +632,136 @@ export class Visualizer {
   private drawHand(hand: HandState, whiteW: number) {
     if (!Number.isFinite(hand.palmX)) return
     const ctx = this.ctx
-    const unit = Math.max(14, Math.min(whiteW * 0.46, 32))
-    const radii = [unit * 0.58, unit * 0.4, unit * 0.44, unit * 0.38, unit * 0.32]
+    const unit = Math.max(15, Math.min(whiteW * 0.5, 34))
     const side = hand.side === 'right' ? 1 : -1
-    const tips = hand.fingers.map((finger) => ({ x: finger.x, y: finger.y }))
-    const tipY = tips.reduce((sum, tip) => sum + tip.y, 0) / tips.length
-    const palmY = Math.min(this.h - unit * 0.8, tipY + unit * 1.55)
-    const bases = tips.map((tip, index) => ({
-      x: tip.x + (index === 0 ? -side * unit * 0.35 : 0),
-      y: palmY,
+    const tips = hand.fingers.map((finger) => ({
+      x: finger.x,
+      y: finger.y,
+      pressed: finger.pressed,
     }))
-    const span = bases.slice(1)
-    const palmX = span.reduce((sum, point) => sum + point.x, 0) / span.length
-    const palmW = Math.max(unit * 2.6, Math.max(...span.map((point) => point.x)) - Math.min(...span.map((point) => point.x)) + unit * 1.4)
+    const tipY = tips.reduce((sum, tip) => sum + tip.y, 0) / tips.length
+    const palmY = Math.min(this.h - unit * 0.55, tipY + unit * 2.05)
+    const palmX = hand.palmX + side * unit * 0.08
+    const spreads = [-side * unit * 1.05, -side * unit * 0.45, side * unit * 0.05, side * unit * 0.55, side * unit * 1.05]
+    const bases = tips.map((_, index) => ({
+      x: palmX + spreads[index] + (index === 0 ? -side * unit * 0.55 : 0),
+      y: palmY + (index === 0 ? unit * 0.18 : index === 4 ? unit * 0.08 : 0),
+    }))
+    const palmW = Math.max(
+      unit * 3.1,
+      Math.max(...bases.map((point) => point.x)) - Math.min(...bases.map((point) => point.x)) + unit * 1.7,
+    )
+    const chains = tips.map((tip, index) =>
+      fingerChain(bases[index].x, bases[index].y, tip.x, tip.y, side, index === 0, tip.pressed),
+    )
 
     ctx.save()
     ctx.beginPath()
     ctx.rect(-40, this.keyboardTop - 8, this.w + 80, this.h + 40)
     ctx.clip()
 
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'
+    ctx.fillStyle = 'rgba(0,0,0,0.34)'
+    for (const chain of chains) {
+      const tip = chain[chain.length - 1]
+      ctx.beginPath()
+      ctx.ellipse(tip.x, tip.y + tip.r * 0.55, tip.r * 1.35, tip.r * 0.55, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
     ctx.beginPath()
-    ctx.ellipse(palmX, palmY + unit * 0.35, palmW * 0.48, unit * 0.55, 0, 0, Math.PI * 2)
+    ctx.ellipse(palmX, palmY + unit * 0.45, palmW * 0.42, unit * 0.7, side * 0.04, 0, Math.PI * 2)
     ctx.fill()
 
     for (const index of [4, 3, 2, 1, 0]) {
-      this.drawFinger(bases[index].x, bases[index].y, tips[index].x, tips[index].y, radii[index])
+      this.drawFingerChain(chains[index], tips[index].pressed, side, index === 0)
     }
 
-    ctx.fillStyle = '#e8b293'
+    const wristTop = palmY + unit * 0.35
+    const wristGrad = ctx.createLinearGradient(palmX, wristTop, palmX, this.h)
+    wristGrad.addColorStop(0, rgba(SKIN_MID, 1))
+    wristGrad.addColorStop(0.45, rgba(SKIN_DARK, 0.92))
+    wristGrad.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = wristGrad
     ctx.beginPath()
-    ctx.ellipse(palmX, palmY, palmW * 0.48, unit * 1.15, side * 0.06, 0, Math.PI * 2)
+    ctx.moveTo(palmX - palmW * 0.22, wristTop)
+    ctx.lineTo(palmX + palmW * 0.22, wristTop)
+    ctx.lineTo(palmX + palmW * 0.16, this.h + 4)
+    ctx.lineTo(palmX - palmW * 0.16, this.h + 4)
+    ctx.closePath()
     ctx.fill()
-    ctx.fillRect(palmX - palmW * 0.22, palmY, palmW * 0.44, this.h - palmY + 8)
-    ctx.fillStyle = '#f3cbb4'
+
+    const palmGrad = ctx.createRadialGradient(
+      palmX - side * unit * 0.15,
+      palmY - unit * 0.2,
+      unit * 0.2,
+      palmX,
+      palmY + unit * 0.2,
+      palmW * 0.7,
+    )
+    palmGrad.addColorStop(0, rgba(SKIN_LIGHT, 1))
+    palmGrad.addColorStop(0.55, rgba(SKIN_MID, 1))
+    palmGrad.addColorStop(1, rgba(SKIN_DARK, 1))
+    ctx.fillStyle = palmGrad
     ctx.beginPath()
-    ctx.ellipse(palmX - side * unit * 0.1, palmY - unit * 0.2, unit * 0.72, unit * 0.42, 0, 0, Math.PI * 2)
+    ctx.ellipse(palmX, palmY, palmW * 0.46, unit * 1.25, side * 0.08, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = rgba(SKIN_LIGHT, 0.55)
+    ctx.beginPath()
+    ctx.ellipse(palmX - side * unit * 0.18, palmY - unit * 0.35, unit * 0.7, unit * 0.38, side * 0.1, 0, Math.PI * 2)
+    ctx.fill()
+
+    const under = ctx.createRadialGradient(palmX, palmY - unit * 0.1, unit * 0.2, palmX, palmY, palmW * 0.55)
+    under.addColorStop(0, rgba(GLOW, 0.2))
+    under.addColorStop(1, rgba(GLOW, 0))
+    ctx.fillStyle = under
+    ctx.beginPath()
+    ctx.ellipse(palmX, palmY - unit * 0.15, palmW * 0.4, unit * 0.9, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
   }
 
-  private drawFinger(x0: number, y0: number, x1: number, y1: number, radius: number) {
+  private drawFingerChain(
+    chain: Array<{ x: number; y: number; r: number }>,
+    pressed: number,
+    side: number,
+    isThumb: boolean,
+  ) {
     const ctx = this.ctx
-    ctx.fillStyle = 'rgba(0,0,0,0.22)'
+    for (let i = 0; i < chain.length - 1; i++) {
+      const a = chain[i]
+      const b = chain[i + 1]
+      ctx.fillStyle = 'rgba(0,0,0,0.18)'
+      fillCapsule(ctx, a.x + 1.2, a.y + 2.2, a.r * 1.02, b.x + 1.2, b.y + 2.2, b.r * 1.02)
+
+      const skin = ctx.createLinearGradient(a.x - a.r, a.y, b.x + b.r, b.y)
+      skin.addColorStop(0, rgba(SKIN_DARK, 1))
+      skin.addColorStop(0.35, rgba(SKIN_MID, 1))
+      skin.addColorStop(0.75, rgba(SKIN_LIGHT, 1))
+      skin.addColorStop(1, rgba(SKIN_MID, 1))
+      ctx.fillStyle = skin
+      fillCapsule(ctx, a.x, a.y, a.r, b.x, b.y, b.r)
+
+      ctx.fillStyle = rgba(SKIN_LIGHT, 0.35)
+      fillCapsule(ctx, a.x - side * a.r * 0.18, a.y - a.r * 0.12, a.r * 0.42, b.x - side * b.r * 0.18, b.y - b.r * 0.12, b.r * 0.36)
+    }
+
+    const tip = chain[chain.length - 1]
+    const glow = Math.max(0.12, pressed * 0.55)
+    const tipGlow = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, tip.r * 2.2)
+    tipGlow.addColorStop(0, rgba(GLOW, glow))
+    tipGlow.addColorStop(1, rgba(GLOW, 0))
+    ctx.fillStyle = tipGlow
     ctx.beginPath()
-    ctx.ellipse(x1, y1 + radius * 0.28, radius * 0.95, radius * 0.4, 0, 0, Math.PI * 2)
+    ctx.ellipse(tip.x, tip.y + tip.r * 0.15, tip.r * 1.8, tip.r * 1.1, 0, 0, Math.PI * 2)
     ctx.fill()
-    ctx.fillStyle = '#e4ad8c'
-    fillFinger(ctx, x0, y0, radius * 1.05, x1, y1, radius * 0.92)
-    ctx.fillStyle = '#f7d4bc'
-    fillFinger(ctx, x0, y0, radius * 0.42, x1, y1, radius * 0.36)
-    ctx.fillStyle = 'rgba(255,236,228,0.85)'
+
+    ctx.fillStyle = rgba(SKIN_NAIL, 0.9)
     ctx.beginPath()
-    ctx.ellipse(x1, y1 - radius * 0.05, radius * 0.46, radius * 0.28, 0, 0, Math.PI * 2)
+    ctx.ellipse(tip.x, tip.y - tip.r * 0.08, tip.r * (isThumb ? 0.55 : 0.48), tip.r * 0.32, side * 0.12, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = rgba(GLOW, 0.18 + pressed * 0.25)
+    ctx.beginPath()
+    ctx.ellipse(tip.x, tip.y + tip.r * 0.2, tip.r * 0.7, tip.r * 0.28, 0, 0, Math.PI * 2)
     ctx.fill()
   }
 

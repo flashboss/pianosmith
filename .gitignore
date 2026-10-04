@@ -10,3 +10,4 @@ android/app/build
 android/build
 android/local.properties
 capacitor.config.ts.bak
+.tmp-hand*.png

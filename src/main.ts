@@ -43,6 +43,7 @@ const playBtn = el<HTMLButtonElement>('play')
 const speedBtn = el<HTMLButtonElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
+const zoomBtn = el<HTMLButtonElement>('zoom')
 const midiBtn = el<HTMLButtonElement>('midi')
 const videoBtn = el<HTMLButtonElement>('video')
 const resetBtn = el<HTMLButtonElement>('reset')
@@ -89,6 +90,9 @@ namesBtn.setAttribute('aria-pressed', namesOn ? 'true' : 'false')
 const handsOn = localStorage.getItem('pianosmith.hands') !== '0'
 viz.setShowHands(handsOn)
 handsBtn.setAttribute('aria-pressed', handsOn ? 'true' : 'false')
+const zoomOn = localStorage.getItem('pianosmith.zoom') === '1'
+viz.setZoom(zoomOn)
+zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -833,6 +837,13 @@ handsBtn.addEventListener('click', () => {
   handsBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
   viz.setShowHands(next)
   localStorage.setItem('pianosmith.hands', next ? '1' : '0')
+})
+
+zoomBtn.addEventListener('click', () => {
+  const next = zoomBtn.getAttribute('aria-pressed') !== 'true'
+  zoomBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
+  viz.setZoom(next)
+  localStorage.setItem('pianosmith.zoom', next ? '1' : '0')
 })
 
 midiBtn.addEventListener('click', () => {
