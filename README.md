@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 . Drop an MP3, WAV, M4A, FLAC, or MIDI file, paste a music link, or play the built-in demo. Loaded tracks are kept in a local playlist (IndexedDB) so you can reopen them without downloading or transcribing again; each entry can be removed. **Video** records a 1920×1080 WebM of the performance. **MIDI** downloads the transcribed notes.
+Open http://localhost:5173 . Drop an MP3, WAV, M4A, FLAC, or MIDI file, paste a music link, or play the built-in demo. Loaded tracks are kept in a local library (IndexedDB): open **Brani salvati** to browse them, create folders, move tracks, or remove them without downloading or transcribing again. **Video** records a 1920×1080 WebM of the performance. **MIDI** downloads the transcribed notes.
 
 Shared links need `yt-dlp` and `ffmpeg` on the machine running the server. Tracks longer than 10 minutes are rejected. Direct files are limited to 45 MB.
 
@@ -48,7 +48,7 @@ You can also install it as a home-screen app from Chrome: the site is a landscap
 
 ## Keys
 
-Space or the play button pauses. On a TV remote, Media Play/Pause does the same and Back returns to the start screen. **Nomi** prints note names on the falling bars. Speed cycles through 1×, 0.75×, and 0.5×.
+Space or the play button pauses. On a TV remote, Media Play/Pause does the same and Back returns to the start screen. **Nomi** prints note names on the falling bars. **Mani** shows or hides the playing hands. Speed cycles through 1×, 0.75×, and 0.5×.
 
 ## License
 

@@ -23,6 +23,7 @@
           <button id="play" type="button">Play</button>
           <button id="speed" type="button">1×</button>
           <button id="names" type="button" aria-pressed="false">Nomi</button>
+          <button id="hands" type="button" aria-pressed="true">Mani</button>
           <button id="midi" type="button">MIDI</button>
           <button id="video" type="button">Video</button>
           <button id="reset" type="button">Nuovo</button>
@@ -48,13 +49,7 @@
           <p id="link-kind" class="hint"></p>
           <p id="yt-hint" class="hint"></p>
           <button id="demo" type="button" class="ghost wide">Guarda la demo</button>
-          <section id="library" class="library" hidden>
-            <div class="library-head">
-              <h2>Brani salvati</h2>
-              <p class="hint">Riaprili senza scaricare o trascrivere di nuovo.</p>
-            </div>
-            <ul id="library-list"></ul>
-          </section>
+          <button id="library-open" type="button" class="ghost wide">Brani salvati</button>
           <details>
             <summary>TV, telefono e server</summary>
             <label class="server">
@@ -80,6 +75,27 @@
       <div id="rec" hidden>REC</div>
       <div id="toast" hidden></div>
       <div id="rotate">Ruota il dispositivo in orizzontale</div>
+
+      <div id="library-modal" class="modal" hidden>
+        <button type="button" class="modal-backdrop" data-library="close" aria-label="Chiudi"></button>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="library-title">
+          <div class="modal-head">
+            <h2 id="library-title">Brani salvati</h2>
+            <button id="library-close" type="button" class="ghost" data-library="close" aria-label="Chiudi">×</button>
+          </div>
+          <nav id="library-path" class="library-path" aria-label="Percorso cartelle"></nav>
+          <div class="library-toolbar">
+            <button id="library-new-folder" type="button" class="ghost">Nuova cartella</button>
+          </div>
+          <form id="library-folder-form" class="library-folder-form" hidden>
+            <input id="library-folder-name" type="text" maxlength="80" placeholder="Nome cartella" autocomplete="off" />
+            <button type="submit">Crea</button>
+            <button id="library-folder-cancel" type="button" class="ghost">Annulla</button>
+          </form>
+          <ul id="library-browser" class="library-browser"></ul>
+          <p id="library-empty" class="hint" hidden>Questa cartella è vuota.</p>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

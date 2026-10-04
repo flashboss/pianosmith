@@ -3,11 +3,19 @@ import { detectLink, fetchLink, linkServerAvailable, linkSourceName, serverBase 
 import { DEMO_TITLE, demoNotes } from './demo'
 import { Visualizer } from './engine'
 import {
+  ROOT_FOLDER_ID,
+  countLibrarySongs,
+  createFolder,
   fileSourceKey,
+  folderOptions,
+  folderPath,
   formatDuration,
   getLibrarySong,
   linkSourceKey,
+  listFolders,
   listLibrarySongs,
+  moveLibrarySong,
+  removeFolder,
   removeLibrarySong,
   saveLibrarySong,
   type LibrarySongMeta,
@@ -33,6 +41,7 @@ const scrub = el<HTMLInputElement>('scrub')
 const playBtn = el<HTMLButtonElement>('play')
 const speedBtn = el<HTMLButtonElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
+const handsBtn = el<HTMLButtonElement>('hands')
 const midiBtn = el<HTMLButtonElement>('midi')
 const videoBtn = el<HTMLButtonElement>('video')
 const resetBtn = el<HTMLButtonElement>('reset')
@@ -50,8 +59,14 @@ const cancelBtn = el<HTMLButtonElement>('cancel')
 const centerPlay = el<HTMLButtonElement>('center-play')
 const recEl = el<HTMLDivElement>('rec')
 const toastEl = el<HTMLDivElement>('toast')
-const libraryEl = el<HTMLElement>('library')
-const libraryList = el<HTMLUListElement>('library-list')
+const libraryOpenBtn = el<HTMLButtonElement>('library-open')
+const libraryModal = el<HTMLDivElement>('library-modal')
+const libraryPath = el<HTMLElement>('library-path')
+const libraryBrowser = el<HTMLUListElement>('library-browser')
+const libraryEmpty = el<HTMLParagraphElement>('library-empty')
+const libraryNewFolderBtn = el<HTMLButtonElement>('library-new-folder')
+const libraryFolderForm = el<HTMLFormElement>('library-folder-form')
+const libraryFolderName = el<HTMLInputElement>('library-folder-name')
 
 const RATES = [1, 0.75, 0.5]
 let player: Player | null = null
@@ -63,11 +78,16 @@ let recording = false
 let scrubbing = false
 let toastTimer = 0
 let hideTimer = 0
+let currentLibraryFolder = ROOT_FOLDER_ID
+let libraryMoveOptions: Array<{ id: string; label: string }> = []
 
 serverInput.value = localStorage.getItem('pianosmith.server') || ''
 const namesOn = localStorage.getItem('pianosmith.names') === '1'
 viz.setShowNames(namesOn)
 namesBtn.setAttribute('aria-pressed', namesOn ? 'true' : 'false')
+const handsOn = localStorage.getItem('pianosmith.hands') !== '0'
+viz.setShowHands(handsOn)
+handsBtn.setAttribute('aria-pressed', handsOn ? 'true' : 'false')
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -212,7 +232,8 @@ async function rememberSong(input: {
 }) {
   try {
     await saveLibrarySong(input)
-    await refreshLibrary()
+    await refreshLibraryButton()
+    if (!libraryModal.hidden) await renderLibraryBrowser()
   } catch (error) {
     console.error(error)
   }
@@ -230,53 +251,162 @@ function libraryLabel(item: LibrarySongMeta): string {
   return duration ? `${kind} · ${duration}` : kind
 }
 
-async function refreshLibrary() {
-  let items: LibrarySongMeta[] = []
+async function refreshLibraryButton() {
   try {
-    items = await listLibrarySongs()
+    const count = await countLibrarySongs()
+    libraryOpenBtn.textContent = count > 0 ? `Brani salvati · ${count}` : 'Brani salvati'
   } catch (error) {
     console.error(error)
-    libraryEl.hidden = true
-    return
-  }
-  libraryEl.hidden = items.length === 0
-  libraryList.replaceChildren()
-  for (const item of items) {
-    const row = document.createElement('li')
-    row.className = 'library-item'
-    row.dataset.id = item.id
-
-    const open = document.createElement('button')
-    open.type = 'button'
-    open.className = 'library-open'
-    open.dataset.action = 'open'
-    open.dataset.id = item.id
-    open.setAttribute('aria-label', `Apri ${item.title}`)
-
-    const title = document.createElement('span')
-    title.className = 'library-title'
-    title.textContent = item.title
-
-    const meta = document.createElement('span')
-    meta.className = 'library-meta'
-    meta.textContent = libraryLabel(item)
-
-    open.append(title, meta)
-
-    const remove = document.createElement('button')
-    remove.type = 'button'
-    remove.className = 'library-remove'
-    remove.dataset.action = 'remove'
-    remove.dataset.id = item.id
-    remove.setAttribute('aria-label', `Rimuovi ${item.title}`)
-    remove.textContent = '×'
-
-    row.append(open, remove)
-    libraryList.append(row)
+    libraryOpenBtn.textContent = 'Brani salvati'
   }
 }
 
+function hideFolderForm() {
+  libraryFolderForm.hidden = true
+  libraryFolderName.value = ''
+  libraryNewFolderBtn.hidden = false
+}
+
+function showFolderForm() {
+  libraryFolderForm.hidden = false
+  libraryNewFolderBtn.hidden = true
+  libraryFolderName.focus()
+  libraryFolderName.select()
+}
+
+function renderLibraryPath(path: Array<{ id: string; name: string }>) {
+  libraryPath.replaceChildren()
+  const root = document.createElement('button')
+  root.type = 'button'
+  root.dataset.library = 'goto'
+  root.dataset.id = ROOT_FOLDER_ID
+  root.textContent = 'Brani salvati'
+  if (!path.length) root.setAttribute('aria-current', 'page')
+  libraryPath.append(root)
+  for (const [index, folder] of path.entries()) {
+    const sep = document.createElement('span')
+    sep.textContent = '/'
+    sep.className = 'library-meta'
+    libraryPath.append(sep)
+    const crumb = document.createElement('button')
+    crumb.type = 'button'
+    crumb.dataset.library = 'goto'
+    crumb.dataset.id = folder.id
+    crumb.textContent = folder.name
+    if (index === path.length - 1) crumb.setAttribute('aria-current', 'page')
+    libraryPath.append(crumb)
+  }
+}
+
+function appendLibraryRow(options: {
+  kind: 'folder' | 'song'
+  id: string
+  title: string
+  meta: string
+  folderId?: string
+}) {
+  const row = document.createElement('li')
+  row.className = options.kind === 'folder' ? 'library-item is-folder' : 'library-item'
+
+  const main = document.createElement('button')
+  main.type = 'button'
+  main.className = 'library-main'
+  main.dataset.library = options.kind === 'folder' ? 'enter' : 'open'
+  main.dataset.id = options.id
+
+  const title = document.createElement('span')
+  title.className = 'library-title'
+  title.textContent = options.title
+
+  const meta = document.createElement('span')
+  meta.className = 'library-meta'
+  meta.textContent = options.meta
+
+  main.append(title, meta)
+
+  const actions = document.createElement('div')
+  actions.className = 'library-actions'
+
+  if (options.kind === 'song') {
+    const move = document.createElement('select')
+    move.className = 'library-move'
+    move.dataset.library = 'move'
+    move.dataset.id = options.id
+    move.setAttribute('aria-label', `Sposta ${options.title}`)
+    for (const option of libraryMoveOptions) {
+      const node = document.createElement('option')
+      node.value = option.id
+      node.textContent = option.label
+      if (option.id === (options.folderId || ROOT_FOLDER_ID)) node.selected = true
+      move.append(node)
+    }
+    actions.append(move)
+  }
+
+  const remove = document.createElement('button')
+  remove.type = 'button'
+  remove.className = 'library-remove'
+  remove.dataset.library = options.kind === 'folder' ? 'remove-folder' : 'remove'
+  remove.dataset.id = options.id
+  remove.setAttribute('aria-label', options.kind === 'folder' ? `Elimina cartella ${options.title}` : `Rimuovi ${options.title}`)
+  remove.textContent = '×'
+  actions.append(remove)
+
+  row.append(main, actions)
+  libraryBrowser.append(row)
+}
+
+async function renderLibraryBrowser() {
+  try {
+    const [folders, songs, path, moves] = await Promise.all([
+      listFolders(currentLibraryFolder),
+      listLibrarySongs(currentLibraryFolder),
+      folderPath(currentLibraryFolder),
+      folderOptions(),
+    ])
+    libraryMoveOptions = moves
+    renderLibraryPath(path)
+    libraryBrowser.replaceChildren()
+    for (const folder of folders) {
+      appendLibraryRow({
+        kind: 'folder',
+        id: folder.id,
+        title: folder.name,
+        meta: 'Cartella',
+      })
+    }
+    for (const song of songs) {
+      appendLibraryRow({
+        kind: 'song',
+        id: song.id,
+        title: song.title,
+        meta: libraryLabel(song),
+        folderId: song.folderId,
+      })
+    }
+    libraryEmpty.hidden = folders.length > 0 || songs.length > 0
+  } catch (error) {
+    console.error(error)
+    toast(error instanceof Error ? error.message : 'Playlist non disponibile')
+  }
+}
+
+async function openLibraryModal() {
+  hideFolderForm()
+  libraryModal.hidden = false
+  await refreshLibraryButton()
+  await renderLibraryBrowser()
+  libraryOpenBtn.setAttribute('aria-expanded', 'true')
+}
+
+function closeLibraryModal() {
+  libraryModal.hidden = true
+  hideFolderForm()
+  libraryOpenBtn.setAttribute('aria-expanded', 'false')
+}
+
 async function loadSaved(id: string) {
+  closeLibraryModal()
   const job = beginJob()
   const transport = ensurePlayer()
   await transport.resume()
@@ -305,7 +435,8 @@ async function loadSaved(id: string) {
 async function removeSaved(id: string) {
   try {
     await removeLibrarySong(id)
-    await refreshLibrary()
+    await refreshLibraryButton()
+    await renderLibraryBrowser()
   } catch (error) {
     toast(error instanceof Error ? error.message : 'Non sono riuscito a rimuovere il brano')
   }
@@ -515,23 +646,87 @@ function showLibrary() {
   gate.hidden = false
   topbar.classList.remove('hidden')
   syncUi()
-  void refreshLibrary()
+  void refreshLibraryButton()
 }
 
-libraryList.addEventListener('click', (event) => {
-  const target = (event.target as HTMLElement | null)?.closest('button[data-action]') as HTMLButtonElement | null
+libraryOpenBtn.setAttribute('aria-expanded', 'false')
+libraryOpenBtn.addEventListener('click', () => {
+  void openLibraryModal()
+})
+
+libraryModal.addEventListener('click', (event) => {
+  const target = (event.target as HTMLElement | null)?.closest('[data-library]') as HTMLElement | null
   if (!target) return
-  const id = target.dataset.id
-  if (!id) return
-  if (target.dataset.action === 'remove') {
-    event.preventDefault()
+  const action = target.dataset.library
+  const id = target.dataset.id || ''
+  if (action === 'close') {
+    closeLibraryModal()
+    return
+  }
+  if (action === 'goto') {
+    currentLibraryFolder = id
+    hideFolderForm()
+    void renderLibraryBrowser()
+    return
+  }
+  if (action === 'enter' && id) {
+    currentLibraryFolder = id
+    hideFolderForm()
+    void renderLibraryBrowser()
+    return
+  }
+  if (action === 'open' && id) {
+    void loadSaved(id)
+    return
+  }
+  if (action === 'remove' && id) {
     void removeSaved(id)
     return
   }
-  if (target.dataset.action === 'open') {
-    event.preventDefault()
-    void loadSaved(id)
+  if (action === 'remove-folder' && id) {
+    void removeFolder(id)
+      .then(async () => {
+        if (currentLibraryFolder === id) currentLibraryFolder = ROOT_FOLDER_ID
+        await renderLibraryBrowser()
+      })
+      .catch((error: unknown) => {
+        toast(error instanceof Error ? error.message : 'Non sono riuscito a eliminare la cartella')
+      })
   }
+})
+
+libraryBrowser.addEventListener('change', (event) => {
+  const select = event.target as HTMLSelectElement | null
+  if (!select || select.dataset.library !== 'move' || !select.dataset.id) return
+  const songId = select.dataset.id
+  const folderId = select.value
+  void moveLibrarySong(songId, folderId)
+    .then(renderLibraryBrowser)
+    .catch((error: unknown) => {
+      toast(error instanceof Error ? error.message : 'Non sono riuscito a spostare il brano')
+      void renderLibraryBrowser()
+    })
+})
+
+libraryNewFolderBtn.addEventListener('click', showFolderForm)
+el<HTMLButtonElement>('library-folder-cancel').addEventListener('click', hideFolderForm)
+
+libraryFolderForm.addEventListener('submit', (event) => {
+  event.preventDefault()
+  void createFolder(libraryFolderName.value, currentLibraryFolder)
+    .then(async () => {
+      hideFolderForm()
+      await renderLibraryBrowser()
+    })
+    .catch((error: unknown) => {
+      toast(error instanceof Error ? error.message : 'Non sono riuscito a creare la cartella')
+    })
+})
+
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || libraryModal.hidden) return
+  event.preventDefault()
+  closeLibraryModal()
 })
 
 fileInput.addEventListener('change', () => {
@@ -574,6 +769,13 @@ namesBtn.addEventListener('click', () => {
   namesBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
   viz.setShowNames(next)
   localStorage.setItem('pianosmith.names', next ? '1' : '0')
+})
+
+handsBtn.addEventListener('click', () => {
+  const next = handsBtn.getAttribute('aria-pressed') !== 'true'
+  handsBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
+  viz.setShowHands(next)
+  localStorage.setItem('pianosmith.hands', next ? '1' : '0')
 })
 
 midiBtn.addEventListener('click', () => {
@@ -669,7 +871,7 @@ fit()
 syncUi()
 registerRemote()
 void refreshLinkServer()
-void refreshLibrary()
+void refreshLibraryButton()
 
 let last = performance.now()
 function loop(now: number) {

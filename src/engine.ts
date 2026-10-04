@@ -144,6 +144,7 @@ export class Visualizer {
   private notes: NoteEvent[] | null = null
   private title = ''
   private showNames = false
+  private showHands = true
   private w = 1280
   private h = 720
   private keyboardTop = 500
@@ -165,6 +166,10 @@ export class Visualizer {
 
   setShowNames(show: boolean) {
     this.showNames = show
+  }
+
+  setShowHands(show: boolean) {
+    this.showHands = show
   }
 
   setTitle(title: string) {
@@ -209,8 +214,10 @@ export class Visualizer {
     this.drawKeyboard(layout, active)
     this.drawFire(layout, active)
     this.drawSparks(step)
-    this.drawHand(this.left, layout.whiteW)
-    this.drawHand(this.right, layout.whiteW)
+    if (this.showHands) {
+      this.drawHand(this.left, layout.whiteW)
+      this.drawHand(this.right, layout.whiteW)
+    }
     this.drawTitle(time)
     this.prev = time
   }

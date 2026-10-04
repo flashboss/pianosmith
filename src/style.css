@@ -30,7 +30,7 @@ canvas#stage {
 
 #app { position: fixed; inset: 0; pointer-events: none; }
 
-#topbar, #gate, #status, #center-play, #toast, #rotate, #rec {
+#topbar, #gate, #status, #center-play, #toast, #rotate, #rec, #library-modal {
   pointer-events: auto;
 }
 
@@ -209,36 +209,138 @@ h1 {
   margin-top: 8px;
 }
 
-.library {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+#library-open {
+  margin-top: 8px;
 }
 
-.library-head {
+.modal {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
   display: grid;
-  gap: 2px;
-  margin-bottom: 10px;
+  place-items: center;
+  padding: 20px;
 }
 
-.library h2 {
+.modal[hidden] {
+  display: none !important;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.55);
+  min-height: 0;
+  padding: 0;
+}
+
+.modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100% - 8px));
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  background: rgba(10, 8, 8, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  padding: 20px 18px 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-head h2 {
   margin: 0;
-  font-size: 15px;
+  flex: 1;
+  font-size: clamp(22px, 3vw, 28px);
+  letter-spacing: -0.03em;
+}
+
+#library-close {
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.library-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.library-path button,
+.library-crumb {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  min-height: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.library-path button:hover,
+.library-path button:focus-visible {
+  background: rgba(255, 122, 50, 0.14);
+  border-color: transparent;
+  color: #fff;
+}
+
+.library-crumb[aria-current="page"] {
+  color: #fff;
   font-weight: 700;
-  letter-spacing: 0.02em;
 }
 
-.library .hint {
-  margin: 0;
+.library-toolbar {
+  display: flex;
+  gap: 8px;
 }
 
-#library-list {
+.library-folder-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.library-folder-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-radius: 12px;
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.library-folder-form button[type="submit"] {
+  background: var(--orange);
+  color: #1a0a04;
+  border: 0;
+  font-weight: 700;
+}
+
+.library-browser {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: 8px;
-  max-height: min(220px, 32vh);
+  max-height: min(420px, 48vh);
   overflow: auto;
 }
 
@@ -253,7 +355,12 @@ h1 {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.library-open {
+.library-item.is-folder {
+  background: rgba(255, 122, 50, 0.08);
+  border-color: rgba(255, 122, 50, 0.28);
+}
+
+.library-main {
   display: grid;
   gap: 2px;
   justify-items: start;
@@ -268,8 +375,8 @@ h1 {
   min-height: 0;
 }
 
-.library-open:hover,
-.library-open:focus-visible {
+.library-main:hover,
+.library-main:focus-visible {
   border-color: transparent;
   background: rgba(255, 122, 50, 0.12);
 }
@@ -287,6 +394,23 @@ h1 {
   color: rgba(255, 255, 255, 0.55);
 }
 
+.library-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.library-move {
+  max-width: 132px;
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .library-remove {
   width: 36px;
   min-height: 36px;
@@ -301,6 +425,12 @@ h1 {
 .library-remove:focus-visible {
   border-color: #e10600;
   color: #fff;
+}
+
+#library-empty {
+  margin: 0;
+  text-align: center;
+  padding: 18px 8px 8px;
 }
 
 details { margin-top: 14px; }
