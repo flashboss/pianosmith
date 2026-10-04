@@ -49,3 +49,9 @@ You can also install it as a home-screen app from Chrome: the site is a landscap
 ## Keys
 
 Space or the play button pauses. On a TV remote, Media Play/Pause does the same and Back returns to the start screen. **Nomi** prints note names on the falling bars. Speed cycles through 1×, 0.75×, and 0.5×.
+
+## License
+
+PianoSmith is released under the [MIT License](LICENSE). Copyright (c) 2026 Luca Stancapiano.
+
+Third-party packages keep their own licenses; transcription uses [Spotify Basic Pitch](https://github.com/spotify/basic-pitch) (Apache-2.0).
