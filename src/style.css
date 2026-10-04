@@ -129,7 +129,17 @@ button[aria-pressed="true"] {
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.12) 45%, rgba(0, 0, 0, 0.28));
 }
 
+#gate.dismissible {
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#gate.dismissible #panel {
+  cursor: auto;
+}
+
 #panel, .card {
+  position: relative;
   width: min(560px, 100%);
   max-height: calc(100% - 8px);
   overflow: auto;
@@ -139,6 +149,19 @@ button[aria-pressed="true"] {
   padding: 28px 24px 22px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px);
+}
+
+#gate-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
+  z-index: 1;
 }
 
 h1 {
@@ -229,16 +252,18 @@ h1 {
 .modal-backdrop {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   border: 0;
   border-radius: 0;
   background: rgba(0, 0, 0, 0.55);
-  min-height: 0;
-  padding: 0;
+  cursor: pointer;
 }
 
 .modal-card {
   position: relative;
   z-index: 1;
+  pointer-events: auto;
   width: min(560px, 100%);
   max-height: min(720px, calc(100% - 8px));
   overflow: auto;

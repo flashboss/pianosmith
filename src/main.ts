@@ -34,6 +34,7 @@ if (!ctx) throw new Error('Canvas non disponibile')
 
 const viz = new Visualizer(ctx)
 const gate = el<HTMLDivElement>('gate')
+const gateCloseBtn = el<HTMLButtonElement>('gate-close')
 const topbar = el<HTMLDivElement>('topbar')
 const titleEl = el<HTMLDivElement>('song-title')
 const clock = el<HTMLSpanElement>('clock')
@@ -198,6 +199,7 @@ function syncUi() {
   midiBtn.disabled = !hasSong || busy
   videoBtn.disabled = !hasSong || busy || !canRecord()
   scrub.disabled = !hasSong || busy
+  syncGateDismiss()
   if (player?.playing) poke()
 }
 
@@ -213,6 +215,7 @@ async function startSong(title: string, nextNotes: NoteEvent[], buffer: AudioBuf
   viz.setTitle(title)
   viz.setNotes(nextNotes)
   gate.hidden = true
+  syncGateDismiss()
   hideStatus()
   syncUi()
   poke()
@@ -641,10 +644,29 @@ function safeName(title: string) {
   return title.replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'pianosmith'
 }
 
+function canDismissGate() {
+  return Boolean(notes && player && statusEl.hidden && !recording)
+}
+
+function syncGateDismiss() {
+  const dismissible = canDismissGate() && !gate.hidden
+  gate.classList.toggle('dismissible', dismissible)
+  gateCloseBtn.hidden = !dismissible
+}
+
+function hideGate() {
+  if (!canDismissGate()) return
+  gate.hidden = true
+  syncGateDismiss()
+  syncUi()
+  poke()
+}
+
 function showLibrary() {
   player?.pause()
   gate.hidden = false
   topbar.classList.remove('hidden')
+  syncGateDismiss()
   syncUi()
   void refreshLibraryButton()
 }
@@ -654,9 +676,17 @@ libraryOpenBtn.addEventListener('click', () => {
   void openLibraryModal()
 })
 
+libraryModal.addEventListener('pointerdown', (event) => {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  if (target === libraryModal || target.classList.contains('modal-backdrop')) {
+    closeLibraryModal()
+  }
+})
+
 libraryModal.addEventListener('click', (event) => {
   const target = (event.target as HTMLElement | null)?.closest('[data-library]') as HTMLElement | null
-  if (!target) return
+  if (!target || !libraryModal.contains(target)) return
   const action = target.dataset.library
   const id = target.dataset.id || ''
   if (action === 'close') {
@@ -723,10 +753,37 @@ libraryFolderForm.addEventListener('submit', (event) => {
     })
 })
 
+function dismissOverlays(event?: KeyboardEvent) {
+  if (!libraryModal.hidden) {
+    event?.preventDefault()
+    if (!libraryFolderForm.hidden) {
+      hideFolderForm()
+      return true
+    }
+    closeLibraryModal()
+    return true
+  }
+  if (!gate.hidden && canDismissGate()) {
+    event?.preventDefault()
+    hideGate()
+    return true
+  }
+  return false
+}
+
 window.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || libraryModal.hidden) return
+  if (event.key !== 'Escape') return
+  dismissOverlays(event)
+})
+
+gate.addEventListener('pointerdown', (event) => {
+  if (event.target !== gate || !canDismissGate()) return
+  hideGate()
+})
+
+gateCloseBtn.addEventListener('click', (event) => {
   event.preventDefault()
-  closeLibraryModal()
+  hideGate()
 })
 
 fileInput.addEventListener('change', () => {
@@ -819,15 +876,17 @@ window.addEventListener('pointermove', poke)
 window.addEventListener('keydown', (event) => {
   poke()
   if (recording) return
-  const tag = (event.target as HTMLElement | null)?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (event.key === 'Escape') return
   if (event.key === 'XF86Back' || event.key === 'GoBack' || event.keyCode === 10009) {
-    if (gate.hidden) {
+    if (dismissOverlays(event)) return
+    if (gate.hidden && notes) {
       event.preventDefault()
       showLibrary()
     }
     return
   }
+  const tag = (event.target as HTMLElement | null)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   if (!gate.hidden || !notes) return
   if (event.key === ' ' || event.key === 'MediaPlayPause' || event.key === 'XF86AudioPlay' || event.key === 'XF86AudioPause') {
     event.preventDefault()

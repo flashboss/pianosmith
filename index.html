@@ -33,6 +33,7 @@
 
       <div id="gate">
         <form id="panel">
+          <button id="gate-close" type="button" class="ghost" hidden aria-label="Torna al brano">×</button>
           <h1>PianoSmith</h1>
           <p class="lead">
             Da un audio o da un link crea un tutorial con le note che scendono e le due mani sul pianoforte.
@@ -77,7 +78,7 @@
       <div id="rotate">Ruota il dispositivo in orizzontale</div>
 
       <div id="library-modal" class="modal" hidden>
-        <button type="button" class="modal-backdrop" data-library="close" aria-label="Chiudi"></button>
+        <div class="modal-backdrop" data-library="close"></div>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="library-title">
           <div class="modal-head">
             <h2 id="library-title">Brani salvati</h2>
