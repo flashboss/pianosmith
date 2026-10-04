@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <title>PianoSmith</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+  </head>
+  <body>
+    <canvas id="stage" aria-label="Tutorial di pianoforte"></canvas>
+    <div id="app">
+      <div id="topbar" hidden>
+        <div class="row">
+          <div class="brand">PianoSmith</div>
+          <div id="song-title"></div>
+          <div class="spacer"></div>
+          <span id="clock">0:00 / 0:00</span>
+          <button id="play" type="button">Play</button>
+          <button id="speed" type="button">1×</button>
+          <button id="names" type="button" aria-pressed="false">Nomi</button>
+          <button id="midi" type="button">MIDI</button>
+          <button id="video" type="button">Video</button>
+          <button id="reset" type="button">Nuovo</button>
+        </div>
+        <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Posizione" />
+      </div>
+
+      <div id="gate">
+        <form id="panel">
+          <h1>PianoSmith</h1>
+          <p class="lead">
+            Da un audio o da un link crea un tutorial con le note che scendono e le due mani sul pianoforte.
+          </p>
+          <label id="drop" class="drop">
+            <input id="file" type="file" accept="audio/*,.mid,.midi,.mp3,.wav,.ogg,.flac,.m4a,.aac,.webm" />
+            <strong>Trascina un audio o un MIDI</strong>
+            <span>MP3, WAV, M4A, FLAC o file MIDI</span>
+          </label>
+          <div class="yt">
+            <input id="yt" type="text" inputmode="url" placeholder="Link del brano" autocomplete="off" aria-label="Link del brano" />
+            <button id="yt-go" type="submit">Crea</button>
+          </div>
+          <p id="link-kind" class="hint"></p>
+          <p id="yt-hint" class="hint"></p>
+          <button id="demo" type="button" class="ghost wide">Guarda la demo</button>
+          <section id="library" class="library" hidden>
+            <div class="library-head">
+              <h2>Brani salvati</h2>
+              <p class="hint">Riaprili senza scaricare o trascrivere di nuovo.</p>
+            </div>
+            <ul id="library-list"></ul>
+          </section>
+          <details>
+            <summary>TV, telefono e server</summary>
+            <label class="server">
+              Server
+              <input id="server" type="url" placeholder="http://192.168.0.10:5173" autocomplete="off" />
+            </label>
+            <p class="hint">
+              I file audio e i MIDI funzionano sul dispositivo. Per un link indica l’indirizzo del computer dove è avviato PianoSmith.
+            </p>
+          </details>
+        </form>
+      </div>
+
+      <div id="status" hidden>
+        <div class="card">
+          <p id="status-text">Trascrizione…</p>
+          <div class="bar"><div id="status-fill"></div></div>
+          <button id="cancel" type="button" class="ghost">Annulla</button>
+        </div>
+      </div>
+
+      <button id="center-play" type="button" hidden aria-label="Play">▶</button>
+      <div id="rec" hidden>REC</div>
+      <div id="toast" hidden></div>
+      <div id="rotate">Ruota il dispositivo in orizzontale</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

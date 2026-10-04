@@ -1,0 +1,28 @@
+{
+  "name": "pianosmith",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-model.mjs",
+    "dev": "node server/index.mjs",
+    "build": "vite build && node scripts/stage-tizen.mjs",
+    "start": "NODE_ENV=production node server/index.mjs",
+    "typecheck": "tsc --noEmit",
+    "android:add": "npm run build && npx cap add android",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android"
+  },
+  "dependencies": {
+    "@spotify/basic-pitch": "1.0.1",
+    "@tensorflow/tfjs": "3.21.0",
+    "@tonejs/midi": "^2.0.28"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.7"
+  }
+}
