@@ -39,6 +39,8 @@ const topbar = el<HTMLDivElement>('topbar')
 const titleEl = el<HTMLDivElement>('song-title')
 const clock = el<HTMLSpanElement>('clock')
 const scrub = el<HTMLInputElement>('scrub')
+const seekBackBtn = el<HTMLButtonElement>('seek-back')
+const seekForwardBtn = el<HTMLButtonElement>('seek-forward')
 const playBtn = el<HTMLButtonElement>('play')
 const speedBtn = el<HTMLButtonElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
@@ -71,6 +73,8 @@ const libraryFolderForm = el<HTMLFormElement>('library-folder-form')
 const libraryFolderName = el<HTMLInputElement>('library-folder-name')
 
 const RATES = [1, 0.75, 0.5]
+const SEEK_STEP = 2
+const SEEK_BIG = 5
 let player: Player | null = null
 let notes: NoteEvent[] | null = null
 let songTitle = ''
@@ -78,6 +82,7 @@ let generation = 0
 let currentAbort: AbortController | null = null
 let recording = false
 let scrubbing = false
+let scrubWasPlaying = false
 let toastTimer = 0
 let hideTimer = 0
 let currentLibraryFolder = ROOT_FOLDER_ID
@@ -185,6 +190,27 @@ function poke() {
   }
 }
 
+function canSeekTransport() {
+  return Boolean(notes && player && player.duration > 0 && statusEl.hidden && !recording && gate.hidden)
+}
+
+function scrubToFraction(fraction: number) {
+  if (!player || !player.duration) return
+  void player.seek(Math.max(0, Math.min(1, fraction)) * player.duration)
+}
+
+function seekTransport(delta: number) {
+  if (!canSeekTransport() || !player) return
+  poke()
+  void player.seekBy(delta)
+}
+
+function endScrub(resume: boolean) {
+  scrubbing = false
+  if (resume && scrubWasPlaying && player) void player.play()
+  scrubWasPlaying = false
+}
+
 function syncUi() {
   const hasSong = Boolean(notes && player)
   topbar.hidden = !hasSong
@@ -200,6 +226,9 @@ function syncUi() {
   const busy = !statusEl.hidden || recording
   centerPlay.hidden = !hasSong || Boolean(player?.playing) || !gate.hidden || busy
   playBtn.disabled = !hasSong || busy
+  const canSeek = canSeekTransport()
+  seekBackBtn.disabled = !canSeek
+  seekForwardBtn.disabled = !canSeek
   midiBtn.disabled = !hasSong || busy
   videoBtn.disabled = !hasSong || busy || !canRecord()
   scrub.disabled = !hasSong || busy
@@ -807,6 +836,9 @@ demoBtn.addEventListener('click', () => {
 
 cancelBtn.addEventListener('click', cancelJob)
 resetBtn.addEventListener('click', showLibrary)
+seekBackBtn.addEventListener('click', () => seekTransport(-SEEK_STEP))
+seekForwardBtn.addEventListener('click', () => seekTransport(SEEK_STEP))
+
 playBtn.addEventListener('click', () => {
   void ensurePlayer().toggle()
 })
@@ -857,13 +889,21 @@ videoBtn.addEventListener('click', () => {
 
 scrub.addEventListener('pointerdown', () => {
   scrubbing = true
+  poke()
+  if (player?.playing) {
+    scrubWasPlaying = true
+    player.pause()
+  } else {
+    scrubWasPlaying = false
+  }
 })
-scrub.addEventListener('pointerup', () => {
-  scrubbing = false
-})
+scrub.addEventListener('pointerup', () => endScrub(true))
+scrub.addEventListener('pointercancel', () => endScrub(true))
 scrub.addEventListener('input', () => {
-  if (!player || !player.duration) return
-  void player.seek((Number(scrub.value) / 1000) * player.duration)
+  scrubToFraction(Number(scrub.value) / 1000)
+})
+scrub.addEventListener('change', () => {
+  scrubToFraction(Number(scrub.value) / 1000)
 })
 
 serverInput.addEventListener('change', () => {
@@ -884,6 +924,47 @@ window.addEventListener('drop', (event) => {
 })
 
 window.addEventListener('pointermove', poke)
+
+function isTextEntryTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (tag !== 'INPUT') return false
+  const type = (target as HTMLInputElement).type
+  return type !== 'range'
+}
+
+function seekDeltaFromKey(event: KeyboardEvent): number | null {
+  const key = event.key
+  const code = event.code
+  const keyCode = event.keyCode
+  const left =
+    key === 'ArrowLeft' ||
+    key === 'Left' ||
+    code === 'ArrowLeft' ||
+    keyCode === 37 ||
+    key === 'MediaTrackPrevious' ||
+    key === 'MediaRewind' ||
+    key === 'XF86AudioRewind' ||
+    key === 'XF86Previous' ||
+    keyCode === 412 ||
+    keyCode === 177
+  const right =
+    key === 'ArrowRight' ||
+    key === 'Right' ||
+    code === 'ArrowRight' ||
+    keyCode === 39 ||
+    key === 'MediaTrackNext' ||
+    key === 'MediaFastForward' ||
+    key === 'XF86AudioForward' ||
+    key === 'XF86Next' ||
+    keyCode === 417 ||
+    keyCode === 176
+  if (!left && !right) return null
+  const step = event.shiftKey ? SEEK_BIG : SEEK_STEP
+  return left ? -step : step
+}
+
 window.addEventListener('keydown', (event) => {
   poke()
   if (recording) return
@@ -896,23 +977,68 @@ window.addEventListener('keydown', (event) => {
     }
     return
   }
-  const tag = (event.target as HTMLElement | null)?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (isTextEntryTarget(event.target)) return
   if (!gate.hidden || !notes) return
   if (event.key === ' ' || event.key === 'MediaPlayPause' || event.key === 'XF86AudioPlay' || event.key === 'XF86AudioPause') {
     event.preventDefault()
     void ensurePlayer().toggle()
+    return
+  }
+  const seekDelta = seekDeltaFromKey(event)
+  if (seekDelta != null) {
+    if (!canSeekTransport()) return
+    event.preventDefault()
+    event.stopPropagation()
+    seekTransport(seekDelta)
+    return
+  }
+  if (!canSeekTransport()) return
+  if (event.key === 'Home') {
+    event.preventDefault()
+    if (player) void player.seek(0)
+    return
+  }
+  if (event.key === 'End') {
+    event.preventDefault()
+    if (player && player.duration) void player.seek(Math.max(0, player.duration - 0.05))
   }
 })
 
 window.addEventListener('resize', fit)
 
 function registerRemote() {
-  const tv = (window as Window & { tizen?: { tvinputdevice?: { registerKeyBatch?: (keys: string[]) => void } } }).tizen
+  const tv = (window as Window & {
+    tizen?: {
+      tvinputdevice?: {
+        registerKey?: (key: string) => void
+        registerKeyBatch?: (keys: string[]) => void
+      }
+    }
+  }).tizen
+  const keys = [
+    'MediaPlay',
+    'MediaPause',
+    'MediaPlayPause',
+    'MediaRewind',
+    'MediaFastForward',
+    'MediaTrackPrevious',
+    'MediaTrackNext',
+    'ArrowLeft',
+    'ArrowRight',
+    'Left',
+    'Right',
+    'Exit',
+  ]
   try {
-    tv?.tvinputdevice?.registerKeyBatch?.(['MediaPlay', 'MediaPause', 'MediaPlayPause', 'Exit'])
+    tv?.tvinputdevice?.registerKeyBatch?.(keys)
   } catch {
-    /* browser */
+    for (const key of keys) {
+      try {
+        tv?.tvinputdevice?.registerKey?.(key)
+      } catch {
+        /* unsupported on this TV */
+      }
+    }
   }
 }
 

@@ -122,6 +122,10 @@ export class Player {
     else this.onChange?.()
   }
 
+  async seekBy(delta: number) {
+    await this.seek(this.currentTime + delta)
+  }
+
   async setRate(rate: number) {
     const time = this.currentTime
     const was = this.playing
