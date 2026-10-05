@@ -52,7 +52,7 @@ You can also install it as a home-screen app from Chrome: the site is a landscap
 
 ## Keys
 
-Space or the play button pauses. On a TV remote, Media Play/Pause does the same and Back opens the start screen; with a song already loaded, Escape, Back, or a click outside closes that screen and returns to the song. **Nomi** prints note names on the falling bars. **Mani** shows or hides the playing hands. **Zoom** follows the active notes; when it is off, the keyboard stays fixed from A0 (La) to C8 (Do) and fills the full width. Speed cycles through 1×, 0.75×, and 0.5×.
+Space or the play button pauses. On a TV remote, Media Play/Pause does the same and Back opens the start screen; with a song already loaded, Escape, Back, or a click outside closes that screen and returns to the song. **Nomi** prints note names on the falling bars. **Mani** shows or hides the playing hands (each hand opens at most 9 white keys). **Zoom** follows the active notes; when it is off, the keyboard stays fixed from A0 (La) to C8 (Do) and fills the full width. Speed cycles through 1×, 0.75×, and 0.5×.
 
 ## License
 

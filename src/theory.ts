@@ -43,6 +43,17 @@ export function whiteIndex(midi: number): number {
   return WHITE_INDEX[m] - WHITE_INDEX[A0]
 }
 
+const WHITE_MIDIS: number[] = []
+for (let midi = A0; midi <= 108; midi++) {
+  if (!BLACK.has(midi % 12)) WHITE_MIDIS.push(midi)
+}
+
+/** MIDI note for a white-key index relative to A0 (clamped to the keyboard). */
+export function midiAtWhiteIndex(index: number): number {
+  const i = Math.max(0, Math.min(WHITE_MIDIS.length - 1, Math.round(index)))
+  return WHITE_MIDIS[i]
+}
+
 export function noteLabel(midi: number, withOctave: boolean): string {
   const name = NAMES[((midi % 12) + 12) % 12]
   if (!withOctave) return name
