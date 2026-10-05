@@ -2,9 +2,9 @@
 
 PianoSmith turns a music file, a MIDI file, or a shared music link into a piano tutorial: notes fall toward the keyboard, the keys light up, and two hands play at the bottom. The picture you see is what the exported video contains.
 
-Project site (GitHub Pages): https://flashboss.github.io/pianosmith/
+Project site: https://pianosmith.vige.it/ (GitHub Pages, custom domain).
 
-In the repo settings, set Pages to deploy from the `main` branch `/docs` folder.
+In the repo settings, set Pages to deploy from the `main` branch `/docs` folder. The `docs/CNAME` file points the site to `pianosmith.vige.it`.
 
 Transcription runs on the device with [Spotify Basic Pitch](https://github.com/spotify/basic-pitch) (Apache-2.0). Audio and MIDI never need a server. Any public `http` or `https` link is accepted. Direct audio and MIDI files (MP3, WAV, FLAC, M4A, AAC, OGG, Opus, WebM, AIFF, WMA, MIDI) are downloaded as files. Other pages are downloaded with `yt-dlp`, which covers YouTube, SoundCloud, Bandcamp, Mixcloud, Vimeo, and the other sites it supports. A playlist or album uses the first playable item. A Spotify link is resolved from public embed metadata (title, artist, duration), then matched to a recording by duration, because the stream itself is not available.
 
