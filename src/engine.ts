@@ -1,5 +1,16 @@
 import type { NoteEvent } from './types'
-import { clampMidi, colorFor, isBlack, midiAtWhiteIndex, noteLabel, rgba, whiteIndex } from './theory'
+import {
+  bestFingerAssignment,
+  canFingerNotes,
+  clampMidi,
+  colorFor,
+  HAND_OPEN,
+  isBlack,
+  midiAtWhiteIndex,
+  noteLabel,
+  rgba,
+  whiteIndex,
+} from './theory'
 
 interface Spark {
   x: number
@@ -35,10 +46,6 @@ interface Layout {
 }
 
 const LOOKAHEAD = 3.15
-/** Inclusive white-key span a hand may open (thumb to pinky). */
-const HAND_SPAN_NOTES = 9
-/** White-key distance between outer fingers when fully open. */
-const HAND_OPEN = HAND_SPAN_NOTES - 1
 /** Fixed keyboard: A0 (La) through C8 (Do), scaled to fill the full width. */
 const FIXED_CAM_LO = whiteIndex(21)
 const FIXED_CAM_HI = whiteIndex(108) + 1
@@ -63,24 +70,40 @@ function whiteSpan(midis: number[]): number {
   return Math.max(...whites) - Math.min(...whites)
 }
 
-/** Keep the densest set of notes that fits inside a 9-note white-key window. */
-function fitToHandSpan(midis: number[]): number[] {
+/** Keep the densest fingerable set of notes inside a 9-note white-key window. */
+function fitToHandSpan(side: 'left' | 'right', midis: number[]): number[] {
   const unique = [...new Set(midis)].sort((a, b) => a - b)
   if (unique.length <= 1) return unique
-  const whites = unique.map((midi) => whiteIndex(midi))
-  if (whites[whites.length - 1] - whites[0] <= HAND_OPEN) return unique
+  if (canFingerNotes(side, unique)) return unique
 
+  const whites = unique.map((midi) => whiteIndex(midi))
   const center = whites.reduce((sum, value) => sum + value, 0) / whites.length
-  let best = unique.slice(0, 1)
+  let best: number[] = unique.slice(0, 1)
   let bestScore = -Infinity
   for (let i = 0; i < unique.length; i++) {
     for (let j = i; j < unique.length; j++) {
       if (whites[j] - whites[i] > HAND_OPEN) break
+      const slice = unique.slice(i, j + 1)
+      if (!canFingerNotes(side, slice)) continue
       const mid = (whites[i] + whites[j]) / 2
       const score = (j - i + 1) * 1000 - Math.abs(mid - center)
       if (score > bestScore) {
         bestScore = score
-        best = unique.slice(i, j + 1)
+        best = slice
+      }
+    }
+  }
+  // Fallback: densest span even if intervals fail (assignment will thin further).
+  if (bestScore < 0) {
+    for (let i = 0; i < unique.length; i++) {
+      for (let j = i; j < unique.length; j++) {
+        if (whites[j] - whites[i] > HAND_OPEN) break
+        const mid = (whites[i] + whites[j]) / 2
+        const score = (j - i + 1) * 1000 - Math.abs(mid - center)
+        if (score > bestScore) {
+          bestScore = score
+          best = unique.slice(i, j + 1)
+        }
       }
     }
   }
@@ -235,7 +258,7 @@ function withinHandReach(prev: number[], notes: number[]): boolean {
 }
 
 /**
- * Assign active notes inside a hard 9-note hand.
+ * Assign active notes inside a hard 9-note hand with finger interval rules.
  * If notes are too far from the current pose, the whole hand jumps — fingers never stretch.
  */
 function fingerMidis(
@@ -246,7 +269,7 @@ function fingerMidis(
 ): number[] {
   const unique = [...new Set(active)].sort((a, b) => a - b)
   const covering =
-    unique.length <= 5 && whiteSpan(unique) <= HAND_OPEN ? unique : fitToHandSpan(unique)
+    unique.length && canFingerNotes(side, unique) ? unique : fitToHandSpan(side, unique)
   const prev = previous?.map((midi) => clampMidi(midi)) ?? openHandMidis(side, home)
 
   if (covering.length === 0) return spaceFingers(side, prev, new Set())
@@ -256,35 +279,31 @@ function fingerMidis(
   const winCenter = (needLo + needHi) / 2
 
   // Jump the whole hand whenever notes sit outside the current 9-note reach.
-  // Never stretch a finger to chase a distant key.
   const jump = !withinHandReach(prev, covering)
   const base = jump ? openHandMidis(side, midiAtWhiteIndex(winCenter)) : prev
-  const notes = side === 'right' ? covering.slice() : covering.slice().reverse()
-  const count = notes.length
 
-  let bestStart = 0
-  let bestCost = Infinity
-  for (let start = 0; start <= 5 - count; start++) {
-    let cost = 0
-    for (let i = 0; i < count; i++) {
-      const finger = start + i
-      const dist = Math.abs(whiteIndex(base[finger]) - whiteIndex(notes[i]))
-      const sticky = !jump && Math.abs(base[finger] - notes[i]) <= 0.85 ? -4 : 0
-      cost += dist + sticky
-    }
-    cost += start * 0.1
-    if (cost < bestCost) {
-      bestCost = cost
-      bestStart = start
-    }
-  }
-
+  const assignment = bestFingerAssignment(side, covering, base)
   const locked = new Set<number>()
   const result = base.slice()
-  for (let i = 0; i < count; i++) {
-    const finger = bestStart + i
-    result[finger] = notes[i]
-    locked.add(finger)
+  if (assignment) {
+    for (let finger = 0; finger < 5; finger++) {
+      const midi = assignment[finger]
+      if (midi == null) continue
+      result[finger] = midi
+      locked.add(finger)
+    }
+  } else if (covering.length > 0) {
+    // Last resort: park the densest playable subset on the nearest block.
+    const fallback = fitToHandSpan(side, covering.slice(0, 1))
+    const alone = bestFingerAssignment(side, fallback, base)
+    if (alone) {
+      for (let finger = 0; finger < 5; finger++) {
+        const midi = alone[finger]
+        if (midi == null) continue
+        result[finger] = midi
+        locked.add(finger)
+      }
+    }
   }
 
   fillIdleFingers(result, locked, side, base)
@@ -583,7 +602,9 @@ export class Visualizer {
       const toMidis = toNotes.map((note) => note.midi)
       const fromMidis = fromNotes.map((note) => note.midi)
       const fromOverloaded =
-        fromNotes.length > 5 || whiteSpan(fromMidis) > HAND_OPEN
+        fromNotes.length > 5 ||
+        whiteSpan(fromMidis) > HAND_OPEN ||
+        !canFingerNotes(from.side, fromMidis)
 
       // Prefer moving notes that are farthest from the current hand center.
       const fromCenter =
@@ -598,7 +619,7 @@ export class Visualizer {
         const outOfReach = !withinHandReach(fromPose, [note.midi])
         if (!outOfReach && !fromOverloaded) continue
         const candidate = [...toMidis, note.midi]
-        if (candidate.length > 5 || whiteSpan(candidate) > HAND_OPEN) continue
+        if (!canFingerNotes(to.side, candidate)) continue
 
         const toCanReach = withinHandReach(toPose, candidate)
         if (!toCanReach && !outOfReach) {
@@ -641,7 +662,7 @@ export class Visualizer {
     const targets = fingerMidis(hand.side, active, hand.home, previous)
     // Whole-hand jump: snap tips so the hand relocates instead of stretching mid-glide.
     const coverCheck =
-      active.length <= 5 && whiteSpan(active) <= HAND_OPEN ? active : fitToHandSpan(active)
+      active.length && canFingerNotes(hand.side, active) ? active : fitToHandSpan(hand.side, active)
     const jumped = Boolean(previous && coverCheck.length && !withinHandReach(previous, coverCheck))
     const glide = jumped || !hand.ready ? 1 : 1 - Math.exp(-9 * dt)
     const pressGlide = hand.ready ? 1 - Math.exp(-16 * dt) : 1
@@ -662,19 +683,45 @@ export class Visualizer {
       finger.pressed += (pressed - finger.pressed) * pressGlide
     }
     if (jumped) {
-      hand.palmX =
-        hand.fingers[1].x * 0.25 +
-        hand.fingers[2].x * 0.45 +
-        hand.fingers[3].x * 0.3 +
-        (hand.side === 'right' ? 6 : -6)
+      hand.palmX = this.palmTargetX(hand, layout.whiteW)
     }
     // Keep tips ordered without opening the hand past 9 white keys.
     this.uncrossFingerPositions(hand, Math.max(6, layout.whiteW * 0.55), layout.whiteW)
-    const palmTarget =
-      hand.fingers[1].x * 0.25 + hand.fingers[2].x * 0.45 + hand.fingers[3].x * 0.3 + (hand.side === 'right' ? 6 : -6)
-    const palmGlide = hand.ready ? 1 - Math.exp(-5.5 * dt) : 1
+    const palmTarget = this.palmTargetX(hand, layout.whiteW)
+    const palmGlide = jumped || !hand.ready ? 1 : 1 - Math.exp(-5.5 * dt)
     hand.palmX += (palmTarget - hand.palmX) * palmGlide
     hand.ready = true
+  }
+
+  /**
+   * Palm follows the inner fingers, then slides toward the thumb when the thumb
+   * gap exceeds a comfortable ~2 white keys — proportional to the excess.
+   */
+  private palmTargetX(hand: HandState, whiteW: number): number {
+    const tips = hand.fingers
+    const inner =
+      tips[1].x * 0.25 + tips[2].x * 0.45 + tips[3].x * 0.3 + (hand.side === 'right' ? 6 : -6)
+    const othersCenter = (tips[1].x + tips[2].x + tips[3].x + tips[4].x) / 4
+    const sep = tips[0].x - othersCenter
+    const comfort = whiteW * 2.15
+    const excess = Math.max(0, Math.abs(sep) - comfort)
+    return inner + Math.sign(sep || (hand.side === 'right' ? -1 : 1)) * excess * 0.62
+  }
+
+  /** Diagonal palm pull toward a stretched thumb (x + y), in pixels. */
+  private thumbPalmPull(hand: HandState, whiteW: number): { x: number; y: number; lean: number } {
+    const tips = hand.fingers
+    const othersCenter = (tips[1].x + tips[2].x + tips[3].x + tips[4].x) / 4
+    const sep = tips[0].x - othersCenter
+    const comfort = whiteW * 2.15
+    const excess = Math.max(0, Math.abs(sep) - comfort)
+    const dir = Math.sign(sep || (hand.side === 'right' ? -1 : 1))
+    return {
+      x: dir * excess * 0.38,
+      // Pull the palm up toward the thumb tip as the gap grows (diagonal).
+      y: -excess * 0.42,
+      lean: dir * Math.min(0.22, (excess / Math.max(whiteW, 1)) * 0.045),
+    }
   }
 
   /** Keep live tip X ordered; never open wider than 9 white keys. */
@@ -982,10 +1029,12 @@ export class Visualizer {
     const tipSpan = Math.min(openPx, Math.max(openPx * 0.55, tipMax - tipMin))
     const tipCenter = (tipMin + tipMax) / 2
     const tipY = tips.reduce((sum, tip) => sum + tip.y, 0) / tips.length
+    const thumbPull = this.thumbPalmPull(hand, whiteW)
     // Longer hand so outer fingers reach without bending sideways.
     const fingerLen = Math.max(unit * 7.1, openPx * 0.92)
-    const palmY = Math.min(this.h - unit * 0.35, tipY + fingerLen)
-    const palmX = tipCenter * 0.55 + hand.palmX * 0.45 + side * unit * 0.04
+    const palmY = Math.min(this.h - unit * 0.35, tipY + fingerLen) + thumbPull.y
+    const palmX = tipCenter * 0.55 + hand.palmX * 0.45 + side * unit * 0.04 + thumbPull.x
+    const palmLean = side * 0.07 + thumbPull.lean
 
     // Knuckles closer to tip span; thumb/pinky stay under the hand, not flared out.
     const knuckleScale = 0.8
@@ -993,9 +1042,9 @@ export class Visualizer {
       let x = palmX + (tip.x - tipCenter) * knuckleScale
       let y = palmY + FINGER_KNUCKLE_LIFT[index] * unit * 1.4
       if (index === 0) {
-        // Thumb root under the palm edge, aligned toward its tip — no outward flare.
-        x = tip.x * 0.4 + palmX * 0.6 - side * unit * 0.45
-        y = palmY + unit * 0.55
+        // Thumb root follows the palm toward the stretched tip.
+        x = tip.x * 0.35 + palmX * 0.65 - side * unit * 0.35
+        y = palmY + unit * 0.55 + thumbPull.y * 0.15
       } else if (index === 1) {
         x = palmX + (tip.x - tipCenter) * (knuckleScale * 0.92)
       } else if (index === 4) {
@@ -1023,7 +1072,7 @@ export class Visualizer {
       ctx.fill()
     }
     ctx.beginPath()
-    ctx.ellipse(palmX, palmY + unit * 0.5, palmW * 0.32, unit * 0.65, side * 0.04, 0, Math.PI * 2)
+    ctx.ellipse(palmX, palmY + unit * 0.5, palmW * 0.32, unit * 0.65, palmLean * 0.6, 0, Math.PI * 2)
     ctx.fill()
 
     for (const index of [4, 3, 2, 1, 0]) {
@@ -1039,8 +1088,8 @@ export class Visualizer {
     ctx.beginPath()
     ctx.moveTo(palmX - palmW * 0.2, wristTop)
     ctx.lineTo(palmX + palmW * 0.2, wristTop)
-    ctx.lineTo(palmX + palmW * 0.14, this.h + 4)
-    ctx.lineTo(palmX - palmW * 0.14, this.h + 4)
+    ctx.lineTo(palmX + palmW * 0.14 + thumbPull.x * 0.25, this.h + 4)
+    ctx.lineTo(palmX - palmW * 0.14 + thumbPull.x * 0.25, this.h + 4)
     ctx.closePath()
     ctx.fill()
 
@@ -1058,12 +1107,12 @@ export class Visualizer {
     ctx.fillStyle = palmGrad
     // Tall palm oval (hand), not a wide flat pad (foot).
     ctx.beginPath()
-    ctx.ellipse(palmX, palmY, palmW * 0.36, unit * 1.55, side * 0.07, 0, Math.PI * 2)
+    ctx.ellipse(palmX, palmY, palmW * 0.36, unit * 1.55, palmLean, 0, Math.PI * 2)
     ctx.fill()
 
     ctx.fillStyle = rgba(SKIN_LIGHT, 0.5)
     ctx.beginPath()
-    ctx.ellipse(palmX - side * unit * 0.16, palmY - unit * 0.4, unit * 0.55, unit * 0.32, side * 0.1, 0, Math.PI * 2)
+    ctx.ellipse(palmX - side * unit * 0.16, palmY - unit * 0.4, unit * 0.55, unit * 0.32, palmLean * 1.2, 0, Math.PI * 2)
     ctx.fill()
 
     const under = ctx.createRadialGradient(palmX, palmY - unit * 0.15, unit * 0.2, palmX, palmY, palmW * 0.45)

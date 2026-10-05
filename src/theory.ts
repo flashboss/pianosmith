@@ -65,9 +65,30 @@ export function clampMidi(midi: number): number {
 }
 
 /** Inclusive white-key span a hand may open (thumb to pinky). */
-const HAND_SPAN_NOTES = 9
-const HAND_OPEN = HAND_SPAN_NOTES - 1
+export const HAND_SPAN_NOTES = 9
+export const HAND_OPEN = HAND_SPAN_NOTES - 1
 const FINGERS_PER_HAND = 5
+
+/**
+ * Max white-index distance between anatomically adjacent non-thumb fingers
+ * when both are pressed (pinky–ring, ring–middle, middle–index).
+ * Distance 2 = one white key between them (e.g. G–B, F–A).
+ */
+export const ADJACENT_MAX_OPEN = 2
+
+/**
+ * Max white-index distance when only thumb + that finger are pressed.
+ * Inclusive note counts: index 6, middle 7, ring 8, pinky 9.
+ * Finger index: 0 thumb, 1 index, 2 middle, 3 ring, 4 pinky.
+ */
+export const THUMB_SOLO_MAX_OPEN = [0, 5, 6, 7, 8] as const
+
+/** Anatomically adjacent non-thumb pairs (finger indices). */
+const ADJACENT_FINGER_PAIRS: ReadonlyArray<readonly [number, number]> = [
+  [1, 2],
+  [2, 3],
+  [3, 4],
+]
 
 function spanOf(midis: number[]): number {
   if (midis.length <= 1) return 0
@@ -75,8 +96,110 @@ function spanOf(midis: number[]): number {
   return Math.max(...whites) - Math.min(...whites)
 }
 
-function spanFits(midis: number[]): boolean {
-  return midis.length <= FINGERS_PER_HAND && spanOf(midis) <= HAND_OPEN
+function whiteDist(a: number, b: number): number {
+  return Math.abs(whiteIndex(a) - whiteIndex(b))
+}
+
+/** Keyboard order of fingers: left→right on the keys. */
+export function keyboardFingerOrder(side: Hand): number[] {
+  // Right: thumb … pinky. Left: pinky … thumb.
+  return side === 'right' ? [0, 1, 2, 3, 4] : [4, 3, 2, 1, 0]
+}
+
+/**
+ * Check pressed-finger interval rules (does not place idle fingers).
+ * `assigned[finger] = midi` for pressed fingers; null/undefined = idle.
+ */
+export function fingerIntervalsOk(assigned: Array<number | null | undefined>): boolean {
+  const pressed: Array<{ finger: number; midi: number }> = []
+  for (let finger = 0; finger < 5; finger++) {
+    const midi = assigned[finger]
+    if (midi == null || !Number.isFinite(midi)) continue
+    pressed.push({ finger, midi })
+  }
+  if (pressed.length === 0) return true
+  if (pressed.length > FINGERS_PER_HAND) return false
+  if (spanOf(pressed.map((item) => item.midi)) > HAND_OPEN) return false
+
+  for (const [a, b] of ADJACENT_FINGER_PAIRS) {
+    const ma = assigned[a]
+    const mb = assigned[b]
+    if (ma == null || mb == null) continue
+    if (whiteDist(ma, mb) > ADJACENT_MAX_OPEN) return false
+  }
+
+  if (pressed.length === 2) {
+    const thumb = pressed.find((item) => item.finger === 0)
+    const other = pressed.find((item) => item.finger !== 0)
+    if (thumb && other) {
+      const maxOpen = THUMB_SOLO_MAX_OPEN[other.finger] ?? HAND_OPEN
+      if (whiteDist(thumb.midi, other.midi) > maxOpen) return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * True if there exists an order-preserving fingering for this hand
+ * that respects the 9-note span and finger interval rules.
+ */
+export function canFingerNotes(side: Hand, midis: number[]): boolean {
+  return bestFingerAssignment(side, midis, null) != null
+}
+
+/**
+ * Pick an order-preserving finger assignment with minimal travel from `previous`.
+ * Returns midis for all 5 fingers (pressed notes locked; others null) or null if impossible.
+ */
+export function bestFingerAssignment(
+  side: Hand,
+  midis: number[],
+  previous: number[] | null,
+): Array<number | null> | null {
+  const notes = [...new Set(midis)].sort((a, b) => a - b)
+  if (notes.length === 0) return [null, null, null, null, null]
+  if (notes.length > FINGERS_PER_HAND || spanOf(notes) > HAND_OPEN) return null
+
+  const order = keyboardFingerOrder(side)
+  let best: Array<number | null> | null = null
+  let bestCost = Infinity
+
+  const walk = (noteIdx: number, orderIdx: number, assign: Array<number | null>) => {
+    if (noteIdx === notes.length) {
+      if (!fingerIntervalsOk(assign)) return
+      let cost = 0
+      for (let finger = 0; finger < 5; finger++) {
+        const midi = assign[finger]
+        if (midi == null || !previous) continue
+        const dist = Math.abs(whiteIndex(previous[finger]) - whiteIndex(midi))
+        const sticky = Math.abs(previous[finger] - midi) <= 0.85 ? -4 : 0
+        cost += dist + sticky
+      }
+      // Prefer using more central / natural blocks slightly.
+      const used = assign.filter((midi) => midi != null).length
+      cost += (5 - used) * 0.01
+      if (cost < bestCost) {
+        bestCost = cost
+        best = assign.slice()
+      }
+      return
+    }
+    for (let i = orderIdx; i < order.length; i++) {
+      if (order.length - i < notes.length - noteIdx) break
+      const finger = order[i]
+      assign[finger] = notes[noteIdx]
+      if (fingerIntervalsOk(assign)) walk(noteIdx + 1, i + 1, assign)
+      assign[finger] = null
+    }
+  }
+
+  walk(0, 0, [null, null, null, null, null])
+  return best
+}
+
+function spanFits(side: Hand, midis: number[]): boolean {
+  return canFingerNotes(side, midis)
 }
 
 function merge(notes: RawNote[]): RawNote[] {
@@ -108,10 +231,18 @@ function partitionPitches(pitches: number[]): Partition | null {
     if (pitch < 60) return { split: pitch + 8, left: [pitch], right: [] }
     return { split: pitch - 8, left: [], right: [pitch] }
   }
-  if (spanFits(sorted)) {
+  if (spanFits('left', sorted)) {
     const avg = sorted.reduce((sum, pitch) => sum + pitch, 0) / sorted.length
     if (avg < 60) return { split: sorted[sorted.length - 1] + 1, left: sorted, right: [] }
-    return { split: sorted[0] - 1, left: [], right: sorted }
+  }
+  if (spanFits('right', sorted)) {
+    const avg = sorted.reduce((sum, pitch) => sum + pitch, 0) / sorted.length
+    if (avg >= 60) return { split: sorted[0] - 1, left: [], right: sorted }
+    // Low cluster that only the right hand can finger still goes right.
+    if (!spanFits('left', sorted)) return { split: sorted[0] - 1, left: [], right: sorted }
+  }
+  if (spanFits('left', sorted) && !spanFits('right', sorted)) {
+    return { split: sorted[sorted.length - 1] + 1, left: sorted, right: [] }
   }
 
   let best: Partition | null = null
@@ -119,7 +250,7 @@ function partitionPitches(pitches: number[]): Partition | null {
   for (let i = 0; i < sorted.length - 1; i++) {
     const left = sorted.slice(0, i + 1)
     const right = sorted.slice(i + 1)
-    if (!spanFits(left) || !spanFits(right)) continue
+    if (!spanFits('left', left) || !spanFits('right', right)) continue
     const split = (sorted[i] + sorted[i + 1]) / 2
     const gap = sorted[i + 1] - sorted[i]
     const mid = (sorted[0] + sorted[sorted.length - 1]) / 2
