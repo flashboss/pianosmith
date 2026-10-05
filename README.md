@@ -52,7 +52,7 @@ You can also install it as a home-screen app from Chrome: the site is a landscap
 
 ## Keys
 
-Space or the play button pauses. Drag the timeline under the controls, or use **−2s** / **+2s**, to move backward or forward. Left/Right arrow keys skip 2 seconds (5 with Shift) on PC and on the Samsung remote; Home and End jump to the start or end. Media Play/Pause pauses, and rewind / fast-forward (or previous / next track) seek the same way. Back opens the start screen; with a song already loaded, Escape, Back, or a click outside closes that screen and returns to the song. **Nomi** prints note names on the falling bars. **Mani** shows or hides the playing hands (each hand opens at most 9 white keys). **Zoom** follows the active notes; when it is off, the keyboard stays fixed from A0 (La) to C8 (Do) and fills the full width. Speed cycles through 1×, 0.75×, and 0.5×.
+Space or the play button pauses. Drag the timeline under the controls, or use **−** / **+**, to move backward or forward. Tap the seconds button (**1s**, **2s**, **5s**, **10s**) to choose the jump size; Left/Right arrows use that step on PC and on the Samsung remote (Shift uses the next larger step). Home and End jump to the start or end. Media Play/Pause pauses, and rewind / fast-forward (or previous / next track) seek the same way. Back opens the start screen; with a song already loaded, Escape, Back, or a click outside closes that screen and returns to the song. **Nomi** prints note names on the falling bars. **Mani** shows or hides the playing hands (each hand opens at most 9 white keys). **Zoom** follows the active notes; when it is off, the keyboard stays fixed from A0 (La) to C8 (Do) and fills the full width. Speed cycles through 1×, 0.75×, and 0.5×.
 
 ## License
 

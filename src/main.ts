@@ -41,6 +41,7 @@ const clock = el<HTMLSpanElement>('clock')
 const scrub = el<HTMLInputElement>('scrub')
 const seekBackBtn = el<HTMLButtonElement>('seek-back')
 const seekForwardBtn = el<HTMLButtonElement>('seek-forward')
+const seekStepBtn = el<HTMLButtonElement>('seek-step')
 const playBtn = el<HTMLButtonElement>('play')
 const speedBtn = el<HTMLButtonElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
@@ -73,8 +74,12 @@ const libraryFolderForm = el<HTMLFormElement>('library-folder-form')
 const libraryFolderName = el<HTMLInputElement>('library-folder-name')
 
 const RATES = [1, 0.75, 0.5]
-const SEEK_STEP = 2
-const SEEK_BIG = 5
+const SEEK_STEPS = [1, 2, 5, 10]
+function loadSeekStep() {
+  const saved = Number(localStorage.getItem('pianosmith.seekStep'))
+  return SEEK_STEPS.includes(saved) ? saved : 2
+}
+let seekStep = loadSeekStep()
 let player: Player | null = null
 let notes: NoteEvent[] | null = null
 let songTitle = ''
@@ -194,6 +199,28 @@ function canSeekTransport() {
   return Boolean(notes && player && player.duration > 0 && statusEl.hidden && !recording && gate.hidden)
 }
 
+function currentSeekStep(big = false) {
+  if (!big) return seekStep
+  const index = SEEK_STEPS.indexOf(seekStep)
+  return SEEK_STEPS[Math.min(SEEK_STEPS.length - 1, index + 1)] ?? seekStep
+}
+
+function syncSeekControls() {
+  const label = `${seekStep}s`
+  seekStepBtn.textContent = label
+  seekBackBtn.textContent = `−${label}`
+  seekForwardBtn.textContent = `+${label}`
+  seekBackBtn.setAttribute('aria-label', `Indietro di ${seekStep} secondi`)
+  seekForwardBtn.setAttribute('aria-label', `Avanti di ${seekStep} secondi`)
+  seekStepBtn.setAttribute('aria-label', `Salti di ${seekStep} secondi`)
+}
+
+function setSeekStep(next: number) {
+  seekStep = SEEK_STEPS.includes(next) ? next : 2
+  localStorage.setItem('pianosmith.seekStep', String(seekStep))
+  syncSeekControls()
+}
+
 function scrubToFraction(fraction: number) {
   if (!player || !player.duration) return
   void player.seek(Math.max(0, Math.min(1, fraction)) * player.duration)
@@ -229,6 +256,7 @@ function syncUi() {
   const canSeek = canSeekTransport()
   seekBackBtn.disabled = !canSeek
   seekForwardBtn.disabled = !canSeek
+  seekStepBtn.disabled = busy
   midiBtn.disabled = !hasSong || busy
   videoBtn.disabled = !hasSong || busy || !canRecord()
   scrub.disabled = !hasSong || busy
@@ -836,8 +864,13 @@ demoBtn.addEventListener('click', () => {
 
 cancelBtn.addEventListener('click', cancelJob)
 resetBtn.addEventListener('click', showLibrary)
-seekBackBtn.addEventListener('click', () => seekTransport(-SEEK_STEP))
-seekForwardBtn.addEventListener('click', () => seekTransport(SEEK_STEP))
+seekBackBtn.addEventListener('click', () => seekTransport(-seekStep))
+seekForwardBtn.addEventListener('click', () => seekTransport(seekStep))
+seekStepBtn.addEventListener('click', () => {
+  const index = SEEK_STEPS.indexOf(seekStep)
+  setSeekStep(SEEK_STEPS[(index + 1) % SEEK_STEPS.length] ?? 2)
+  poke()
+})
 
 playBtn.addEventListener('click', () => {
   void ensurePlayer().toggle()
@@ -961,7 +994,7 @@ function seekDeltaFromKey(event: KeyboardEvent): number | null {
     keyCode === 417 ||
     keyCode === 176
   if (!left && !right) return null
-  const step = event.shiftKey ? SEEK_BIG : SEEK_STEP
+  const step = currentSeekStep(event.shiftKey)
   return left ? -step : step
 }
 
@@ -1064,6 +1097,7 @@ function showDetectedLink() {
 ytInput.addEventListener('input', showDetectedLink)
 
 fit()
+syncSeekControls()
 syncUi()
 registerRemote()
 void refreshLinkServer()
