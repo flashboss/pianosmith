@@ -169,7 +169,7 @@ function playablePitches(pitches: number[], velocityOf: (midi: number) => number
   return { split: pitch - 8, left: [], right: only, keep: only }
 }
 
-function colorFor(hand: Hand, midi: number): [number, number, number] {
+export function colorFor(hand: Hand, midi: number): [number, number, number] {
   const palette = hand === 'left' ? LEFT : RIGHT
   return palette[midi % palette.length]
 }

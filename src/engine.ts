@@ -1,5 +1,5 @@
 import type { NoteEvent } from './types'
-import { clampMidi, isBlack, midiAtWhiteIndex, noteLabel, rgba, whiteIndex } from './theory'
+import { clampMidi, colorFor, isBlack, midiAtWhiteIndex, noteLabel, rgba, whiteIndex } from './theory'
 
 interface Spark {
   x: number
@@ -93,40 +93,82 @@ function openHandMidis(side: 'left' | 'right', centerMidi: number): number[] {
   return offsets.map((offset) => midiAtWhiteIndex(center + offset))
 }
 
-function fingerOrderOk(
-  side: 'left' | 'right',
-  assigned: Array<number | null>,
-  finger: number,
-  note: number,
-): boolean {
-  for (let other = 0; other < 5; other++) {
-    const midi = assigned[other]
-    if (midi === null || other === finger) continue
-    if (other < finger) {
-      if (side === 'right' && midi > note + 0.01) return false
-      if (side === 'left' && midi < note - 0.01) return false
-    } else {
-      if (side === 'right' && midi < note - 0.01) return false
-      if (side === 'left' && midi > note + 0.01) return false
+/** Force fingertip midis into a 9-note window. Locked keys stay put when they already fit. */
+function enforceHandOpen(midis: number[], locked: Set<number> = new Set()): number[] {
+  const result = midis.map((midi) => clampMidi(midi))
+  if (whiteSpan(result) <= HAND_OPEN) return result
+
+  if (locked.size > 0) {
+    const lockedMidis = [...locked].map((finger) => result[finger])
+    if (whiteSpan(lockedMidis) <= HAND_OPEN) {
+      const loW = Math.min(...lockedMidis.map(whiteIndex))
+      const hiW = Math.max(...lockedMidis.map(whiteIndex))
+      const room = HAND_OPEN - (hiW - loW)
+      const pad = Math.floor(room / 2)
+      const winLo = loW - pad
+      const winHi = hiW + (room - pad)
+      for (let finger = 0; finger < 5; finger++) {
+        if (locked.has(finger)) continue
+        const w = whiteIndex(result[finger])
+        if (w < winLo) result[finger] = midiAtWhiteIndex(winLo)
+        else if (w > winHi) result[finger] = midiAtWhiteIndex(winHi)
+      }
+      return result
     }
   }
-  return true
+
+  const whites = result.map((midi) => whiteIndex(midi))
+  const minW = Math.min(...whites)
+  const maxW = Math.max(...whites)
+  const center = (minW + maxW) / 2
+  const scale = HAND_OPEN / Math.max(1, maxW - minW)
+  return whites.map((value, finger) => {
+    if (locked.has(finger)) return result[finger]
+    return midiAtWhiteIndex(center + (value - center) * scale)
+  })
 }
 
 /**
- * Place idle fingers only between the outer pressed notes.
- * Never expand past the active span or past HAND_OPEN.
- * Fingers that already sit inside the span stay put.
+ * Order fingertips with at least 1 white key between neighbors, then clamp to 9 notes.
+ * Never allows the hand to open wider than HAND_OPEN — fingers do not stretch.
+ */
+function spaceFingers(side: 'left' | 'right', midis: number[], locked: Set<number>): number[] {
+  const whites = midis.map((midi) => whiteIndex(midi))
+  const minGap = 1
+
+  if (side === 'right') {
+    for (let i = 1; i < 5; i++) {
+      if (whites[i] < whites[i - 1] + minGap && !locked.has(i)) whites[i] = whites[i - 1] + minGap
+    }
+    for (let i = 3; i >= 0; i--) {
+      if (whites[i] > whites[i + 1] - minGap && !locked.has(i)) whites[i] = whites[i + 1] - minGap
+    }
+  } else {
+    for (let i = 1; i < 5; i++) {
+      if (whites[i] > whites[i - 1] - minGap && !locked.has(i)) whites[i] = whites[i - 1] - minGap
+    }
+    for (let i = 3; i >= 0; i--) {
+      if (whites[i] < whites[i + 1] + minGap && !locked.has(i)) whites[i] = whites[i + 1] + minGap
+    }
+  }
+
+  return enforceHandOpen(
+    whites.map((w) => midiAtWhiteIndex(w)),
+    locked,
+  )
+}
+
+/**
+ * Place idle fingers inside the 9-note window around the pressed notes.
+ * They never extend the hand past HAND_OPEN.
  */
 function fillIdleFingers(result: number[], locked: Set<number>, side: 'left' | 'right', previous: number[]): void {
   const lockedFingers = [...locked].sort((a, b) => a - b)
   if (lockedFingers.length === 0) return
 
   const lockedMidis = lockedFingers.map((finger) => result[finger])
-  const lo = Math.min(...lockedMidis)
-  const hi = Math.max(...lockedMidis)
-  const loW = whiteIndex(lo)
-  const hiW = whiteIndex(hi)
+  const loW = Math.min(...lockedMidis.map(whiteIndex))
+  const hiW = Math.max(...lockedMidis.map(whiteIndex))
   const room = Math.max(0, HAND_OPEN - (hiW - loW))
   const pad = Math.floor(room / 2)
   const spanLoW = loW - pad
@@ -134,7 +176,6 @@ function fillIdleFingers(result: number[], locked: Set<number>, side: 'left' | '
 
   for (let finger = 0; finger < 5; finger++) {
     if (locked.has(finger)) continue
-    const prevW = whiteIndex(previous[finger])
     let left = -1
     let right = -1
     for (let i = finger - 1; i >= 0; i--) {
@@ -149,16 +190,19 @@ function fillIdleFingers(result: number[], locked: Set<number>, side: 'left' | '
         break
       }
     }
-    const leftMidi = left >= 0 ? result[left] : null
-    const rightMidi = right >= 0 ? result[right] : null
-    const between =
-      (leftMidi == null ||
-        (side === 'right' ? previous[finger] >= leftMidi - 0.01 : previous[finger] <= leftMidi + 0.01)) &&
-      (rightMidi == null ||
-        (side === 'right' ? previous[finger] <= rightMidi + 0.01 : previous[finger] >= rightMidi - 0.01))
-    if (between && prevW >= spanLoW - 0.01 && prevW <= spanHiW + 0.01) {
-      result[finger] = previous[finger]
-      continue
+    const prevW = whiteIndex(previous[finger])
+    if (prevW >= spanLoW && prevW <= spanHiW) {
+      const leftMidi = left >= 0 ? result[left] : null
+      const rightMidi = right >= 0 ? result[right] : null
+      const between =
+        (leftMidi == null ||
+          (side === 'right' ? previous[finger] >= leftMidi - 0.01 : previous[finger] <= leftMidi + 0.01)) &&
+        (rightMidi == null ||
+          (side === 'right' ? previous[finger] <= rightMidi + 0.01 : previous[finger] >= rightMidi - 0.01))
+      if (between) {
+        result[finger] = previous[finger]
+        continue
+      }
     }
     if (left >= 0 && right >= 0) {
       const t = (finger - left) / (right - left)
@@ -172,45 +216,27 @@ function fillIdleFingers(result: number[], locked: Set<number>, side: 'left' | '
       const steps = right - finger
       result[finger] = result[right] + ((edge - result[right]) * steps) / Math.max(1, right)
     } else {
-      result[finger] = previous[finger]
+      result[finger] = midiAtWhiteIndex(Math.min(spanHiW, Math.max(spanLoW, prevW)))
     }
     result[finger] = clampMidi(result[finger])
   }
 }
 
-/** Hard clamp finger tips into a 9-note window without moving locked notes when possible. */
-function clampFingerSpan(midis: number[], locked: Set<number>): number[] {
-  const result = midis.map((midi) => clampMidi(midi))
-  if (whiteSpan(result) <= HAND_OPEN) return result
-
-  if (locked.size > 0) {
-    const lockedMidis = [...locked].map((finger) => result[finger])
-    const center = (Math.min(...lockedMidis.map(whiteIndex)) + Math.max(...lockedMidis.map(whiteIndex))) / 2
-    const windowLo = center - HAND_OPEN / 2
-    const windowHi = center + HAND_OPEN / 2
-    for (let finger = 0; finger < 5; finger++) {
-      if (locked.has(finger)) continue
-      const w = whiteIndex(result[finger])
-      if (w < windowLo) result[finger] = midiAtWhiteIndex(windowLo)
-      else if (w > windowHi) result[finger] = midiAtWhiteIndex(windowHi)
-    }
-    if (whiteSpan(result) <= HAND_OPEN) return result
-  }
-
-  const whites = result.map((midi) => whiteIndex(midi))
-  const minW = Math.min(...whites)
-  const maxW = Math.max(...whites)
-  const center = (minW + maxW) / 2
-  const scale = HAND_OPEN / Math.max(1, maxW - minW)
-  return result.map((_, index) => {
-    if (locked.has(index)) return result[index]
-    return midiAtWhiteIndex(center + (whites[index] - center) * scale)
-  })
+/** True when every note sits inside a 9-note window around the hand's current pose. */
+function withinHandReach(prev: number[], notes: number[]): boolean {
+  if (notes.length === 0) return true
+  const prevWhites = prev.map((midi) => whiteIndex(midi))
+  const center = (Math.min(...prevWhites) + Math.max(...prevWhites)) / 2
+  const reachLo = center - HAND_OPEN / 2
+  const reachHi = center + HAND_OPEN / 2
+  const needLo = whiteIndex(Math.min(...notes))
+  const needHi = whiteIndex(Math.max(...notes))
+  return needLo >= reachLo - 0.01 && needHi <= reachHi + 0.01 && needHi - needLo <= HAND_OPEN
 }
 
 /**
- * Assign active notes to the nearest fingers.
- * Prefer a finger already on/near the key; never reshuffle the whole hand for pitch order.
+ * Assign active notes inside a hard 9-note hand.
+ * If notes are too far from the current pose, the whole hand jumps — fingers never stretch.
  */
 function fingerMidis(
   side: 'left' | 'right',
@@ -223,77 +249,46 @@ function fingerMidis(
     unique.length <= 5 && whiteSpan(unique) <= HAND_OPEN ? unique : fitToHandSpan(unique)
   const prev = previous?.map((midi) => clampMidi(midi)) ?? openHandMidis(side, home)
 
-  // No notes: stay where the fingers already are — no reset jump.
-  if (covering.length === 0) return prev.slice()
+  if (covering.length === 0) return spaceFingers(side, prev, new Set())
 
-  const assigned: Array<number | null> = [null, null, null, null, null]
-  const usedNotes = new Set<number>()
+  const needLo = whiteIndex(Math.min(...covering))
+  const needHi = whiteIndex(Math.max(...covering))
+  const winCenter = (needLo + needHi) / 2
 
-  // 1) Exact hits first — finger already on the key.
-  for (let finger = 0; finger < 5; finger++) {
-    for (const note of covering) {
-      if (usedNotes.has(note)) continue
-      if (Math.abs(prev[finger] - note) > 0.85) continue
-      if (!fingerOrderOk(side, assigned, finger, note)) continue
-      assigned[finger] = note
-      usedNotes.add(note)
-      break
+  // Jump the whole hand whenever notes sit outside the current 9-note reach.
+  // Never stretch a finger to chase a distant key.
+  const jump = !withinHandReach(prev, covering)
+  const base = jump ? openHandMidis(side, midiAtWhiteIndex(winCenter)) : prev
+  const notes = side === 'right' ? covering.slice() : covering.slice().reverse()
+  const count = notes.length
+
+  let bestStart = 0
+  let bestCost = Infinity
+  for (let start = 0; start <= 5 - count; start++) {
+    let cost = 0
+    for (let i = 0; i < count; i++) {
+      const finger = start + i
+      const dist = Math.abs(whiteIndex(base[finger]) - whiteIndex(notes[i]))
+      const sticky = !jump && Math.abs(base[finger] - notes[i]) <= 0.85 ? -4 : 0
+      cost += dist + sticky
     }
-  }
-
-  // 2) Remaining notes → nearest free finger (by white-key distance).
-  const leftover = covering
-    .filter((note) => !usedNotes.has(note))
-    .sort((a, b) => {
-      const nearA = Math.min(...prev.map((midi) => Math.abs(whiteIndex(midi) - whiteIndex(a))))
-      const nearB = Math.min(...prev.map((midi) => Math.abs(whiteIndex(midi) - whiteIndex(b))))
-      return nearA - nearB
-    })
-
-  for (const note of leftover) {
-    const noteW = whiteIndex(note)
-    let bestFinger = -1
-    let bestCost = Infinity
-    for (let finger = 0; finger < 5; finger++) {
-      if (assigned[finger] !== null) continue
-      if (!fingerOrderOk(side, assigned, finger, note)) continue
-      const dist = Math.abs(whiteIndex(prev[finger]) - noteW)
-      // Small bias to central fingers only when distances tie — never override nearness.
-      const cost = dist * 10 + Math.abs(finger - 2) * 0.01
-      if (cost < bestCost) {
-        bestCost = cost
-        bestFinger = finger
-      }
-    }
-    if (bestFinger < 0) {
-      for (let finger = 0; finger < 5; finger++) {
-        if (assigned[finger] !== null) continue
-        const cost = Math.abs(whiteIndex(prev[finger]) - noteW)
-        if (cost < bestCost) {
-          bestCost = cost
-          bestFinger = finger
-        }
-      }
-    }
-    if (bestFinger >= 0) {
-      assigned[bestFinger] = note
-      usedNotes.add(note)
+    cost += start * 0.1
+    if (cost < bestCost) {
+      bestCost = cost
+      bestStart = start
     }
   }
 
   const locked = new Set<number>()
-  const result = prev.slice()
-  for (let finger = 0; finger < 5; finger++) {
-    const note = assigned[finger]
-    if (note === null) continue
-    result[finger] = note
+  const result = base.slice()
+  for (let i = 0; i < count; i++) {
+    const finger = bestStart + i
+    result[finger] = notes[i]
     locked.add(finger)
   }
 
-  if (locked.size === 0) return prev.slice()
-
-  fillIdleFingers(result, locked, side, prev)
-  return clampFingerSpan(result, locked)
+  fillIdleFingers(result, locked, side, base)
+  return spaceFingers(side, result, locked)
 }
 
 function traceRoundRect(
@@ -466,6 +461,7 @@ export class Visualizer {
 
     this.frameCamera(time, step)
     const layout = this.layout()
+    this.reassignDistantNotes(time)
     this.separateHands()
     this.updateHand(this.left, time, step, layout)
     this.updateHand(this.right, time, step, layout)
@@ -561,6 +557,67 @@ export class Visualizer {
     this.right.home = mid + 1.5
   }
 
+  /**
+   * If a note is outside a hand's 9-note reach, give it to the other hand when that
+   * hand has free fingers and can cover it without stretching past HAND_OPEN.
+   */
+  private reassignDistantNotes(time: number) {
+    if (!this.notes) return
+
+    const activeFor = (side: 'left' | 'right') =>
+      this.notes!.filter(
+        (note) =>
+          note.hand === side && time >= note.start - 0.11 && time < note.end + 0.02,
+      )
+
+    const poseOf = (hand: HandState) =>
+      hand.ready ? hand.fingers.map((finger) => finger.midi) : openHandMidis(hand.side, hand.home)
+
+    const tryMove = (from: HandState, to: HandState) => {
+      const fromNotes = activeFor(from.side)
+      const toNotes = activeFor(to.side)
+      if (fromNotes.length === 0 || toNotes.length >= 5) return
+
+      const fromPose = poseOf(from)
+      const toPose = poseOf(to)
+      const toMidis = toNotes.map((note) => note.midi)
+      const fromMidis = fromNotes.map((note) => note.midi)
+      const fromOverloaded =
+        fromNotes.length > 5 || whiteSpan(fromMidis) > HAND_OPEN
+
+      // Prefer moving notes that are farthest from the current hand center.
+      const fromCenter =
+        (Math.min(...fromPose.map(whiteIndex)) + Math.max(...fromPose.map(whiteIndex))) / 2
+      const ordered = [...fromNotes].sort(
+        (a, b) =>
+          Math.abs(whiteIndex(b.midi) - fromCenter) - Math.abs(whiteIndex(a.midi) - fromCenter),
+      )
+
+      for (const note of ordered) {
+        if (toNotes.length >= 5) break
+        const outOfReach = !withinHandReach(fromPose, [note.midi])
+        if (!outOfReach && !fromOverloaded) continue
+        const candidate = [...toMidis, note.midi]
+        if (candidate.length > 5 || whiteSpan(candidate) > HAND_OPEN) continue
+
+        const toCanReach = withinHandReach(toPose, candidate)
+        if (!toCanReach && !outOfReach) {
+          const fromDist = Math.abs(whiteIndex(note.midi) - whiteIndex(from.home))
+          const toDist = Math.abs(whiteIndex(note.midi) - whiteIndex(to.home))
+          if (toDist >= fromDist - 0.5) continue
+        }
+
+        note.hand = to.side
+        note.color = colorFor(to.side, note.midi)
+        toMidis.push(note.midi)
+        toNotes.push(note)
+      }
+    }
+
+    tryMove(this.left, this.right)
+    tryMove(this.right, this.left)
+  }
+
   private updateHand(hand: HandState, time: number, dt: number, layout: Layout) {
     const active: number[] = []
     const sounding: number[] = []
@@ -582,13 +639,17 @@ export class Visualizer {
     }
     const previous = hand.ready ? hand.fingers.map((finger) => finger.midi) : null
     const targets = fingerMidis(hand.side, active, hand.home, previous)
-    const glide = hand.ready ? 1 - Math.exp(-9 * dt) : 1
+    // Whole-hand jump: snap tips so the hand relocates instead of stretching mid-glide.
+    const coverCheck =
+      active.length <= 5 && whiteSpan(active) <= HAND_OPEN ? active : fitToHandSpan(active)
+    const jumped = Boolean(previous && coverCheck.length && !withinHandReach(previous, coverCheck))
+    const glide = jumped || !hand.ready ? 1 : 1 - Math.exp(-9 * dt)
     const pressGlide = hand.ready ? 1 - Math.exp(-16 * dt) : 1
     const liftGlide = hand.ready ? 1 - Math.exp(-8 * dt) : 1
-    const thumbShift = layout.whiteW * (hand.side === 'right' ? -0.28 : 0.28)
+    const thumbShift = layout.whiteW * (hand.side === 'right' ? -0.18 : 0.18)
     // Raise the whole hand for sharps instead of stretching individual fingers.
     const liftTarget = targets.some((midi) => isBlack(midi)) ? 1 : 0
-    hand.lift += (liftTarget - hand.lift) * liftGlide
+    hand.lift += (liftTarget - hand.lift) * (jumped ? 1 : liftGlide)
     const liftPx = hand.lift * this.blackKeyLift()
     for (let index = 0; index < 5; index++) {
       const midi = targets[index]
@@ -600,11 +661,52 @@ export class Visualizer {
       finger.y += (this.fingerY(index, pressed) - liftPx - finger.y) * glide
       finger.pressed += (pressed - finger.pressed) * pressGlide
     }
+    if (jumped) {
+      hand.palmX =
+        hand.fingers[1].x * 0.25 +
+        hand.fingers[2].x * 0.45 +
+        hand.fingers[3].x * 0.3 +
+        (hand.side === 'right' ? 6 : -6)
+    }
+    // Keep tips ordered without opening the hand past 9 white keys.
+    this.uncrossFingerPositions(hand, Math.max(6, layout.whiteW * 0.55), layout.whiteW)
     const palmTarget =
       hand.fingers[1].x * 0.25 + hand.fingers[2].x * 0.45 + hand.fingers[3].x * 0.3 + (hand.side === 'right' ? 6 : -6)
     const palmGlide = hand.ready ? 1 - Math.exp(-5.5 * dt) : 1
     hand.palmX += (palmTarget - hand.palmX) * palmGlide
     hand.ready = true
+  }
+
+  /** Keep live tip X ordered; never open wider than 9 white keys. */
+  private uncrossFingerPositions(hand: HandState, minGap: number, whiteW: number) {
+    const tips = hand.fingers
+    if (hand.side === 'right') {
+      for (let i = 1; i < 5; i++) {
+        if (tips[i].x < tips[i - 1].x + minGap) tips[i].x = tips[i - 1].x + minGap
+      }
+      for (let i = 3; i >= 0; i--) {
+        if (tips[i].x > tips[i + 1].x - minGap) tips[i].x = tips[i + 1].x - minGap
+      }
+    } else {
+      for (let i = 1; i < 5; i++) {
+        if (tips[i].x > tips[i - 1].x - minGap) tips[i].x = tips[i - 1].x - minGap
+      }
+      for (let i = 3; i >= 0; i--) {
+        if (tips[i].x < tips[i + 1].x + minGap) tips[i].x = tips[i + 1].x + minGap
+      }
+    }
+
+    // Hard visual clamp: tip span must stay inside HAND_OPEN white keys.
+    const xs = tips.map((finger) => finger.x)
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const maxSpan = whiteW * HAND_OPEN
+    if (maxX - minX <= maxSpan + 0.01) return
+    const center = (minX + maxX) / 2
+    const scale = maxSpan / Math.max(1, maxX - minX)
+    for (const finger of tips) {
+      finger.x = center + (finger.x - center) * scale
+    }
   }
 
   /** How far the hand rises to play black keys without lengthening fingers. */
@@ -877,7 +979,7 @@ export class Visualizer {
     }))
     const tipMin = Math.min(...tips.map((tip) => tip.x))
     const tipMax = Math.max(...tips.map((tip) => tip.x))
-    const tipSpan = Math.max(openPx * 0.55, tipMax - tipMin)
+    const tipSpan = Math.min(openPx, Math.max(openPx * 0.55, tipMax - tipMin))
     const tipCenter = (tipMin + tipMax) / 2
     const tipY = tips.reduce((sum, tip) => sum + tip.y, 0) / tips.length
     // Longer hand so outer fingers reach without bending sideways.
