@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 if (!existsSync('dist/index.html')) {
@@ -10,4 +10,17 @@ mkdirSync('tizen-app', { recursive: true })
 cpSync('dist', 'tizen-app', { recursive: true })
 cpSync('tizen/config.xml', path.join('tizen-app', 'config.xml'))
 if (existsSync('tizen/icon.png')) cpSync('tizen/icon.png', path.join('tizen-app', 'icon.png'))
+
+const indexPath = path.join('tizen-app', 'index.html')
+const html = readFileSync(indexPath, 'utf8')
+const webapis = '<script type="text/javascript" src="$WEBAPIS/webapis/webapis.js"></script>\n'
+if (!html.includes('$WEBAPIS/webapis/webapis.js')) {
+  writeFileSync(
+    indexPath,
+    html.includes('</head>')
+      ? html.replace('</head>', `  ${webapis}</head>`)
+      : `${webapis}${html}`,
+  )
+}
+
 console.log('Staged Tizen package in tizen-app/')

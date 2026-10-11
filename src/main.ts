@@ -967,6 +967,50 @@ function isTextEntryTarget(target: EventTarget | null) {
   return type !== 'range'
 }
 
+function isTizenTv() {
+  return typeof (window as Window & { tizen?: unknown }).tizen !== 'undefined'
+}
+
+function isSmartTvUi() {
+  return (
+    isTizenTv() ||
+    document.documentElement.classList.contains('is-tv') ||
+    /Tizen|SMART-TV|SmartTV|Samsung/i.test(navigator.userAgent)
+  )
+}
+
+function isBackKey(event: KeyboardEvent) {
+  const key = event.key
+  const code = event.keyCode
+  return (
+    key === 'Back' ||
+    key === 'XF86Back' ||
+    key === 'GoBack' ||
+    key === 'BrowserBack' ||
+    key === 'Escape' ||
+    code === 10009 ||
+    code === 461 ||
+    code === 27
+  )
+}
+
+function isPlayPauseKey(event: KeyboardEvent) {
+  const key = event.key
+  const code = event.keyCode
+  return (
+    key === ' ' ||
+    key === 'MediaPlayPause' ||
+    key === 'XF86AudioPlay' ||
+    key === 'XF86AudioPause' ||
+    key === 'MediaPlay' ||
+    key === 'MediaPause' ||
+    code === 32 ||
+    code === 10252 || // MediaPlayPause
+    code === 415 || // MediaPlay
+    code === 19 // MediaPause
+  )
+}
+
 function seekDeltaFromKey(event: KeyboardEvent): number | null {
   const key = event.key
   const code = event.code
@@ -981,6 +1025,7 @@ function seekDeltaFromKey(event: KeyboardEvent): number | null {
     key === 'XF86AudioRewind' ||
     key === 'XF86Previous' ||
     keyCode === 412 ||
+    keyCode === 10232 ||
     keyCode === 177
   const right =
     key === 'ArrowRight' ||
@@ -992,31 +1037,204 @@ function seekDeltaFromKey(event: KeyboardEvent): number | null {
     key === 'XF86AudioForward' ||
     key === 'XF86Next' ||
     keyCode === 417 ||
+    keyCode === 10233 ||
     keyCode === 176
   if (!left && !right) return null
   const step = currentSeekStep(event.shiftKey)
   return left ? -step : step
 }
 
+function isVisibleFocusable(node: HTMLElement) {
+  if (node.hasAttribute('disabled') || (node as HTMLButtonElement).disabled) return false
+  if (node.closest('[hidden]')) return false
+  const style = getComputedStyle(node)
+  if (style.display === 'none' || style.visibility === 'hidden') return false
+  const rect = node.getBoundingClientRect()
+  return rect.width > 2 && rect.height > 2
+}
+
+/** Controls the TV remote can land on in the current overlay / top bar. */
+function tvFocusables(): HTMLElement[] {
+  const roots: HTMLElement[] = []
+  if (!libraryModal.hidden) roots.push(libraryModal)
+  else if (!statusEl.hidden) roots.push(statusEl)
+  else if (!gate.hidden) roots.push(gate)
+  else if (!topbar.hidden) roots.push(topbar)
+  if (!centerPlay.hidden) roots.push(centerPlay)
+
+  const nodes = roots.flatMap((root) =>
+    [...root.querySelectorAll<HTMLElement>('button, a[href], input, summary, select, [tabindex]:not([tabindex="-1"])')],
+  )
+  return nodes.filter((node) => {
+    if (!isVisibleFocusable(node)) return false
+    if (node.tagName === 'INPUT') {
+      const type = (node as HTMLInputElement).type
+      // Skip file pickers on TV; keep text/url/range reachable.
+      if (type === 'file') return false
+    }
+    return true
+  })
+}
+
+function focusTvEl(node: HTMLElement | null | undefined) {
+  if (!node) return
+  try {
+    node.focus()
+  } catch {
+    /* ignore */
+  }
+}
+
+function moveTvFocus(dx: number, dy: number) {
+  const items = tvFocusables()
+  if (!items.length) return
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const current = active && items.includes(active) ? active : null
+  if (!current) {
+    focusTvEl(items[0])
+    return
+  }
+
+  const cur = current.getBoundingClientRect()
+  const cx = cur.left + cur.width / 2
+  const cy = cur.top + cur.height / 2
+  let best: HTMLElement | null = null
+  let bestScore = Infinity
+
+  for (const item of items) {
+    if (item === current) continue
+    const box = item.getBoundingClientRect()
+    const ix = box.left + box.width / 2
+    const iy = box.top + box.height / 2
+    const ox = ix - cx
+    const oy = iy - cy
+    if (dx !== 0 && Math.sign(ox) !== dx) continue
+    if (dy !== 0 && Math.sign(oy) !== dy) continue
+    if (dx !== 0 && Math.abs(ox) < 4) continue
+    if (dy !== 0 && Math.abs(oy) < 4) continue
+    const primary = dx !== 0 ? Math.abs(ox) : Math.abs(oy)
+    const secondary = dx !== 0 ? Math.abs(oy) : Math.abs(ox)
+    const score = primary * 1000 + secondary
+    if (score < bestScore) {
+      bestScore = score
+      best = item
+    }
+  }
+
+  if (best) focusTvEl(best)
+  else if (dx !== 0) {
+    const index = items.indexOf(current)
+    focusTvEl(items[(index + dx + items.length) % items.length])
+  }
+}
+
+function activateTvFocus() {
+  const el = document.activeElement
+  if (!(el instanceof HTMLElement)) return
+  if (el.tagName === 'SUMMARY') {
+    const details = el.parentElement
+    if (details instanceof HTMLDetailsElement) details.open = !details.open
+    return
+  }
+  if (el.tagName === 'BUTTON' || el.tagName === 'A' || el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+    el.click()
+  }
+}
+
+function exitTizenApp() {
+  try {
+    const tizen = (window as Window & {
+      tizen?: { application?: { getCurrentApplication?: () => { exit: () => void } } }
+    }).tizen
+    tizen?.application?.getCurrentApplication?.().exit()
+  } catch {
+    /* ignore */
+  }
+}
+
+function ensureTvFocus() {
+  if (!isSmartTvUi()) return
+  const active = document.activeElement
+  if (active instanceof HTMLElement && tvFocusables().includes(active)) return
+  focusTvEl(tvFocusables()[0] ?? document.body)
+}
+
 window.addEventListener('keydown', (event) => {
   poke()
   if (recording) return
-  if (event.key === 'Escape') return
-  if (event.key === 'XF86Back' || event.key === 'GoBack' || event.keyCode === 10009) {
+
+  // Escape is also handled above for overlays; keep a single path for TV Back.
+  if (isBackKey(event)) {
     if (dismissOverlays(event)) return
     if (gate.hidden && notes) {
       event.preventDefault()
       showLibrary()
+      queueMicrotask(ensureTvFocus)
+      return
+    }
+    // Home screen of the app: leave the widget.
+    if (!gate.hidden && !canDismissGate()) {
+      event.preventDefault()
+      exitTizenApp()
     }
     return
   }
+
   if (isTextEntryTarget(event.target)) return
-  if (!gate.hidden || !notes) return
-  if (event.key === ' ' || event.key === 'MediaPlayPause' || event.key === 'XF86AudioPlay' || event.key === 'XF86AudioPause') {
+
+  const key = event.key
+  const code = event.keyCode
+  const playing = gate.hidden && Boolean(notes)
+
+  // D-pad: navigate UI whenever an overlay/menu is open; while playing, Up/Down move the top bar.
+  if (key === 'ArrowUp' || code === 38) {
+    event.preventDefault()
+    moveTvFocus(0, -1)
+    return
+  }
+  if (key === 'ArrowDown' || code === 40) {
+    event.preventDefault()
+    moveTvFocus(0, 1)
+    return
+  }
+
+  if (!playing) {
+    if (key === 'ArrowLeft' || code === 37) {
+      event.preventDefault()
+      moveTvFocus(-1, 0)
+      return
+    }
+    if (key === 'ArrowRight' || code === 39) {
+      event.preventDefault()
+      moveTvFocus(1, 0)
+      return
+    }
+    if (key === 'Enter' || code === 13) {
+      event.preventDefault()
+      activateTvFocus()
+      return
+    }
+    return
+  }
+
+  if (key === 'Enter' || code === 13) {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && tvFocusables().includes(active) && active !== document.body) {
+      event.preventDefault()
+      activateTvFocus()
+      return
+    }
     event.preventDefault()
     void ensurePlayer().toggle()
     return
   }
+
+  if (isPlayPauseKey(event)) {
+    event.preventDefault()
+    void ensurePlayer().toggle()
+    return
+  }
+
   const seekDelta = seekDeltaFromKey(event)
   if (seekDelta != null) {
     if (!canSeekTransport()) return
@@ -1039,39 +1257,71 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('resize', fit)
 
+/**
+ * Register only optional media keys. Arrows, Enter and Back are mandatory on Tizen
+ * and must NOT be passed to registerKeyBatch — that invalidates the whole batch.
+ */
 function registerRemote() {
+  if (isSmartTvUi()) document.documentElement.classList.add('is-tv')
+
   const tv = (window as Window & {
     tizen?: {
       tvinputdevice?: {
         registerKey?: (key: string) => void
-        registerKeyBatch?: (keys: string[]) => void
+        registerKeyBatch?: (
+          keys: string[],
+          successCallback?: () => void,
+          errorCallback?: (error: unknown) => void,
+        ) => void
       }
     }
   }).tizen
+
   const keys = [
     'MediaPlay',
     'MediaPause',
     'MediaPlayPause',
+    'MediaStop',
     'MediaRewind',
     'MediaFastForward',
     'MediaTrackPrevious',
     'MediaTrackNext',
-    'ArrowLeft',
-    'ArrowRight',
-    'Left',
-    'Right',
-    'Exit',
   ]
-  try {
-    tv?.tvinputdevice?.registerKeyBatch?.(keys)
-  } catch {
-    for (const key of keys) {
-      try {
-        tv?.tvinputdevice?.registerKey?.(key)
-      } catch {
-        /* unsupported on this TV */
-      }
+
+  const registerOne = (key: string) => {
+    try {
+      tv?.tvinputdevice?.registerKey?.(key)
+    } catch {
+      /* unsupported on this TV */
     }
+  }
+
+  try {
+    if (tv?.tvinputdevice?.registerKeyBatch) {
+      tv.tvinputdevice.registerKeyBatch(
+        keys,
+        () => undefined,
+        () => {
+          for (const key of keys) registerOne(key)
+        },
+      )
+    } else {
+      for (const key of keys) registerOne(key)
+    }
+  } catch {
+    for (const key of keys) registerOne(key)
+  }
+
+  if (isSmartTvUi()) {
+    document.body.setAttribute('tabindex', '-1')
+    queueMicrotask(() => {
+      try {
+        document.body.focus()
+      } catch {
+        /* ignore */
+      }
+      ensureTvFocus()
+    })
   }
 }
 

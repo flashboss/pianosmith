@@ -107,6 +107,17 @@ button:focus-visible, input:focus-visible, summary:focus-visible {
   outline-offset: 2px;
 }
 
+/* Samsung TV remotes often set :focus without :focus-visible. */
+.is-tv button:focus,
+.is-tv input:focus,
+.is-tv summary:focus,
+.is-tv select:focus,
+.is-tv a:focus {
+  outline: 3px solid var(--orange);
+  outline-offset: 2px;
+  border-color: var(--orange);
+}
+
 button[aria-pressed="true"] {
   background: var(--orange);
   color: #1a0a04;
