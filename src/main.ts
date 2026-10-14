@@ -1,6 +1,6 @@
 import './style.css'
 import { initI18n, t } from './i18n'
-import { detectLink, fetchLink, linkServerAvailable, linkSourceName, serverBase } from './api'
+import { detectLink, fetchLink, linkServerAvailable, linkSourceName, serverBase, serverFieldValue } from './api'
 import { demoNotes } from './demo'
 import { Visualizer } from './engine'
 import {
@@ -100,7 +100,13 @@ let hideTimer = 0
 let currentLibraryFolder = ROOT_FOLDER_ID
 let libraryMoveOptions: Array<{ id: string; label: string }> = []
 
-serverInput.value = localStorage.getItem('pianosmith.server') || ''
+{
+  const resolved = serverFieldValue()
+  serverInput.value = resolved
+  serverInput.placeholder = resolved
+  const saved = (localStorage.getItem('pianosmith.server') || '').trim().replace(/\/$/, '')
+  if (saved !== resolved) localStorage.setItem('pianosmith.server', resolved)
+}
 const namesOn = localStorage.getItem('pianosmith.names') === '1'
 viz.setShowNames(namesOn)
 namesBtn.setAttribute('aria-pressed', namesOn ? 'true' : 'false')
@@ -1018,7 +1024,9 @@ scrub.addEventListener('change', () => {
 })
 
 serverInput.addEventListener('change', () => {
-  localStorage.setItem('pianosmith.server', serverInput.value.trim())
+  const next = serverInput.value.trim().replace(/\/$/, '') || serverFieldValue()
+  serverInput.value = next
+  localStorage.setItem('pianosmith.server', next)
   void refreshLinkServer()
 })
 

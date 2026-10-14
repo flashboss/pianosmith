@@ -28,7 +28,7 @@ const it: Dict = {
   tvPhoneServer: 'TV, telefono e server',
   server: 'Server',
   serverHint:
-    'I file audio e i MIDI funzionano sul dispositivo. Per un link indica l’indirizzo del computer dove è avviato PianoSmith.',
+    'I file audio e i MIDI funzionano sul dispositivo. Il campo Server è già l’indirizzo di questa pagina; cambialo solo se TV o telefono devono usare un altro host.',
   statusDefault: 'Trascrizione…',
   cancel: 'Annulla',
   rotate: 'Ruota il dispositivo in orizzontale',
@@ -133,7 +133,7 @@ const en: Dict = {
   tvPhoneServer: 'TV, phone, and server',
   server: 'Server',
   serverHint:
-    'Audio and MIDI files work on this device. For a link, enter the address of the computer running PianoSmith.',
+    'Audio and MIDI files work on this device. Server defaults to this page’s address; change it only if the TV or phone must use another host.',
   statusDefault: 'Transcribing…',
   cancel: 'Cancel',
   rotate: 'Rotate the device to landscape',
@@ -236,7 +236,7 @@ const fr: Dict = {
   tvPhoneServer: 'TV, téléphone et serveur',
   server: 'Serveur',
   serverHint:
-    'Les fichiers audio et MIDI fonctionnent sur l’appareil. Pour un lien, indiquez l’adresse de l’ordinateur qui fait tourner PianoSmith.',
+    'Les fichiers audio et MIDI fonctionnent sur l’appareil. Le champ Serveur est déjà l’adresse de cette page ; changez-la seulement si la TV ou le téléphone doit utiliser un autre hôte.',
   statusDefault: 'Transcription…',
   cancel: 'Annuler',
   rotate: 'Tournez l’appareil en mode paysage',
@@ -335,7 +335,7 @@ const es: Dict = {
   tvPhoneServer: 'TV, teléfono y servidor',
   server: 'Servidor',
   serverHint:
-    'Los archivos de audio y MIDI funcionan en el dispositivo. Para un enlace, indica la dirección del ordenador donde corre PianoSmith.',
+    'Los archivos de audio y MIDI funcionan en el dispositivo. El campo Servidor ya es la dirección de esta página; cámbiala solo si la TV o el teléfono deben usar otro host.',
   statusDefault: 'Transcripción…',
   cancel: 'Cancelar',
   rotate: 'Gira el dispositivo a horizontal',
@@ -434,7 +434,7 @@ const de: Dict = {
   tvPhoneServer: 'TV, Telefon und Server',
   server: 'Server',
   serverHint:
-    'Audio- und MIDI-Dateien funktionieren auf dem Gerät. Für einen Link die Adresse des Computers angeben, auf dem PianoSmith läuft.',
+    'Audio- und MIDI-Dateien funktionieren auf dem Gerät. Das Server-Feld ist bereits die Adresse dieser Seite; nur ändern, wenn TV oder Telefon einen anderen Host brauchen.',
   statusDefault: 'Transkription…',
   cancel: 'Abbrechen',
   rotate: 'Gerät ins Querformat drehen',
@@ -533,7 +533,7 @@ const zh: Dict = {
   savedSongsCount: '已保存曲目 · {n}',
   tvPhoneServer: '电视、手机与服务器',
   server: '服务器',
-  serverHint: '音频和 MIDI 可在本机使用。若使用链接，请填写运行 PianoSmith 的电脑地址。',
+  serverHint: '音频和 MIDI 可在本机使用。服务器字段默认为此页面地址；仅当电视或手机需要其他主机时再修改。',
   statusDefault: '转录中…',
   cancel: '取消',
   rotate: '请将设备旋转为横屏',
@@ -637,7 +637,7 @@ const ja: Dict = {
   tvPhoneServer: 'TV・スマホ・サーバー',
   server: 'サーバー',
   serverHint:
-    '音声と MIDI はこの端末で使えます。リンクを使う場合は PianoSmith を動かしている PC のアドレスを入力してください。',
+    '音声と MIDI はこの端末で使えます。サーバー欄はこのページのアドレスが初期値です。TV やスマホが別ホストを使うときだけ変更してください。',
   statusDefault: '書き起こし中…',
   cancel: 'キャンセル',
   rotate: '端末を横向きにしてください',
