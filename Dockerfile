@@ -8,8 +8,8 @@
 # Dockerfile builder). Do not use GitHub Pages for this role — Pages is static
 # only and cannot run yt-dlp.
 #
-# Optional: if YouTube blocks the host IP, set YTDLP_COOKIES (Netscape cookies.txt
-# contents) or YTDLP_COOKIES_FILE (path inside the container).
+# Optional: if YouTube blocks the host IP, set YTDLP_COOKIES (filtered Netscape
+# cookies.txt from `npm run cookies:export`), YTDLP_COOKIES_URL, or YTDLP_COOKIES_FILE.
 #
 # The platform should inject PORT; the app listens on 0.0.0.0.
 

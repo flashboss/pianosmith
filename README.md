@@ -45,7 +45,13 @@ YouTube often blocks datacenter IPs. There is no fully automatic bypass inside t
    # or: npm run cookies:export -- firefox
    ```
 
-   Copy `yt-cookies.txt` into the host secret **`YTDLP_COOKIES`** (file contents) or mount it and set **`YTDLP_COOKIES_FILE`**. Re-run when downloads start failing again (cookies expire). Do not commit that file.
+   The script **filters** to YouTube/Google cookies only (full browser dumps are too large for Railway Variables). Then either:
+
+   - paste `yt-cookies.txt` into **`YTDLP_COOKIES`**, or
+   - host the file on a private URL and set **`YTDLP_COOKIES_URL`**, or
+   - mount a volume / file and set **`YTDLP_COOKIES_FILE`**
+
+   Re-run the export when downloads start failing again (cookies expire). Do not commit that file.
 
 2. **Residential proxy (unattended)** — set **`YTDLP_PROXY`** (or `HTTPS_PROXY`) to an HTTP/SOCKS proxy URL so yt-dlp exits through a non-datacenter IP. Best option if you want links to keep working without refreshing cookies.
 

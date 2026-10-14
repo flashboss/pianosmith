@@ -277,19 +277,37 @@ async function ytdlpAvailable() {
 
 let busy = false
 let cookiesPath = null
+let cookiesReady = null
 
-/** Optional Netscape cookies.txt via YTDLP_COOKIES_FILE or YTDLP_COOKIES secret. */
-function youtubeCookiesArgs() {
-  if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
-    return ['--cookies', process.env.YTDLP_COOKIES_FILE]
-  }
-  const raw = process.env.YTDLP_COOKIES?.trim()
-  if (!raw) return []
-  if (!cookiesPath) {
-    cookiesPath = path.join(os.tmpdir(), 'pianosmith-yt-cookies.txt')
-    writeFileSync(cookiesPath, raw.endsWith('\n') ? raw : `${raw}\n`, 'utf8')
-  }
-  return ['--cookies', cookiesPath]
+function writeCookiesFile(raw) {
+  cookiesPath = path.join(os.tmpdir(), 'pianosmith-yt-cookies.txt')
+  writeFileSync(cookiesPath, raw.endsWith('\n') ? raw : `${raw}\n`, 'utf8')
+  return cookiesPath
+}
+
+/**
+ * Resolve cookies for yt-dlp (first match wins):
+ * YTDLP_COOKIES_FILE → YTDLP_COOKIES → YTDLP_COOKIES_URL
+ */
+async function ensureYoutubeCookiesArgs() {
+  if (cookiesReady) return cookiesReady
+  cookiesReady = (async () => {
+    if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
+      return ['--cookies', process.env.YTDLP_COOKIES_FILE]
+    }
+    const raw = process.env.YTDLP_COOKIES?.trim()
+    if (raw) return ['--cookies', writeCookiesFile(raw)]
+    const url = process.env.YTDLP_COOKIES_URL?.trim()
+    if (url) {
+      const response = await fetch(url, { redirect: 'follow' })
+      if (!response.ok) throw new Error(`Cookie URL HTTP ${response.status}`)
+      const text = await response.text()
+      if (text.trim().length < 20) throw new Error('Cookie URL returned an empty file')
+      return ['--cookies', writeCookiesFile(text)]
+    }
+    return []
+  })()
+  return cookiesReady
 }
 
 /** Optional HTTP(S) proxy so yt-dlp leaves from a residential IP instead of the cloud host. */
@@ -326,7 +344,7 @@ async function downloadYouTube(url, titleOverride) {
       'audio.%(ext)s',
       '--print',
       '%(title)s',
-      ...youtubeCookiesArgs(),
+      ...(await ensureYoutubeCookiesArgs()),
       ...youtubeProxyArgs(),
     ]
     const ffmpeg = ffmpegDir()
