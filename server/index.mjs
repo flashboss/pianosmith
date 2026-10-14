@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, createReadStream, statSync } from 'node:fs'
+import { existsSync, createReadStream, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import http from 'node:http'
 import os from 'node:os'
@@ -276,31 +276,52 @@ async function ytdlpAvailable() {
 }
 
 let busy = false
+let cookiesPath = null
+
+/** Optional Netscape cookies.txt via YTDLP_COOKIES_FILE or YTDLP_COOKIES secret. */
+function youtubeCookiesArgs() {
+  if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
+    return ['--cookies', process.env.YTDLP_COOKIES_FILE]
+  }
+  const raw = process.env.YTDLP_COOKIES?.trim()
+  if (!raw) return []
+  if (!cookiesPath) {
+    cookiesPath = path.join(os.tmpdir(), 'pianosmith-yt-cookies.txt')
+    writeFileSync(cookiesPath, raw.endsWith('\n') ? raw : `${raw}\n`, 'utf8')
+  }
+  return ['--cookies', cookiesPath]
+}
 
 async function downloadYouTube(url, titleOverride) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'pianosmith-'))
   try {
     const args = [
-        '--playlist-items',
-        '1',
-        '--no-simulate',
-        '--no-warnings',
-        '--no-progress',
-        '--restrict-filenames',
-        '--match-filter',
-        'duration < 600',
-        '-f',
-        'bestaudio/best',
-        '-x',
-        '--audio-format',
-        'mp3',
-        '--audio-quality',
-        '5',
-        '-o',
-        'audio.%(ext)s',
-        '--print',
-        '%(title)s',
-      ]
+      '--playlist-items',
+      '1',
+      '--no-simulate',
+      '--no-progress',
+      '--restrict-filenames',
+      '--match-filter',
+      'duration < 600',
+      // Cloud hosts (Railway, etc.) are often blocked on the web client; android/ios
+      // plus a JS runtime for YouTube challenges work more reliably.
+      '--js-runtimes',
+      'node',
+      '--extractor-args',
+      'youtube:player_client=android,ios,web',
+      '-f',
+      'bestaudio/best',
+      '-x',
+      '--audio-format',
+      'mp3',
+      '--audio-quality',
+      '5',
+      '-o',
+      'audio.%(ext)s',
+      '--print',
+      '%(title)s',
+      ...youtubeCookiesArgs(),
+    ]
     const ffmpeg = ffmpegDir()
     if (ffmpeg) args.push('--ffmpeg-location', ffmpeg)
     args.push(url)
@@ -326,17 +347,22 @@ async function downloadYouTube(url, titleOverride) {
 
 function friendly(error) {
   const text = String(error?.message || error || '')
-  if (error?.code === 'ENOENT' || text.includes('ENOENT') || /yt-dlp/i.test(text) && /not found/i.test(text)) {
+  if (error?.code === 'ENOENT' || text.includes('ENOENT') || (/yt-dlp/i.test(text) && /not found/i.test(text))) {
     return 'yt-dlp non è installato su questo computer'
   }
   if (/ffmpeg|ffprobe/i.test(text)) return 'ffmpeg non è installato su questo computer'
   if (/does not pass|filtered|duration/i.test(text)) return 'Il video supera i 10 minuti'
+  if (/sign in to confirm|not a bot|cookies? are (?:required|needed)|http error 403/i.test(text)) {
+    return 'YouTube blocca i download da questo server (IP cloud). Esporta i cookie del browser in un file e imposta YTDLP_COOKIES_FILE, oppure usa un file audio locale.'
+  }
   if (/private|unavailable|confirm your age|sign in/i.test(text)) return 'Video non disponibile'
   if (text === 'Download scaduto') return 'Download scaduto. Riprova.'
   if (/unsupported url|no suitable extractor|unable to extract|not a valid url/i.test(text)) {
     return 'Questo link non contiene un audio che posso scaricare'
   }
-  if (/Spotify|brano|Nessun audio|Link non valido|Il file ha risposto|Audio troppo grande|Audio scaricato vuoto/i.test(text)) return text
+  if (/Spotify|brano|Nessun audio|Link non valido|Il file ha risposto|Audio troppo grande|Audio scaricato vuoto/i.test(text)) {
+    return text
+  }
   return 'Non sono riuscito a scaricare l’audio'
 }
 

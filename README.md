@@ -24,6 +24,25 @@ npm run build
 npm start
 ```
 
+## Remote server (Docker)
+
+GitHub Pages (`pianosmith.vige.it`) only hosts the static marketing site. To run the full app on a remote host (Railway, Fly.io, a VPS, …) so phones and TVs can paste music links without your laptop, use the root **`Dockerfile`**.
+
+That image:
+
+- installs **ffmpeg** and **yt-dlp** (required for shared links; not provided by `npm`)
+- runs `npm ci`, **`npm run build`**, and `npm start` so the container serves both the UI and `/api/link`
+- listens on `0.0.0.0` and the platform `PORT`
+
+Point the host’s build at the Dockerfile (on Railway: Dockerfile builder). After deploy, open the public URL and leave the in-app **Server** field empty when the UI and API are on the same origin. Check `GET /api/health` — it should report `"ytdlp": true`.
+
+YouTube often blocks datacenter IPs. If downloads fail with a bot / sign-in error, export a Netscape `cookies.txt` from your browser and set **`YTDLP_COOKIES`** (file contents) or **`YTDLP_COOKIES_FILE`** (path in the container). Audio and MIDI file uploads still work without that.
+
+```bash
+docker build -t pianosmith .
+docker run --rm -p 8080:8080 -e PORT=8080 pianosmith
+```
+
 ## Samsung Tizen TV
 
 The TV build is a web widget staged in `tizen-app/` by `npm run build`.
