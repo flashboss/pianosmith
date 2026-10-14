@@ -48,6 +48,7 @@ const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
 const midiBtn = el<HTMLButtonElement>('midi')
+const sheetBtn = el<HTMLButtonElement>('sheet')
 const videoBtn = el<HTMLButtonElement>('video')
 const resetBtn = el<HTMLButtonElement>('reset')
 const fileInput = el<HTMLInputElement>('file')
@@ -258,6 +259,7 @@ function syncUi() {
   seekForwardBtn.disabled = !canSeek
   seekStepBtn.disabled = busy
   midiBtn.disabled = !hasSong || busy
+  sheetBtn.disabled = !hasSong || busy
   videoBtn.disabled = !hasSong || busy || !canRecord()
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
@@ -645,6 +647,24 @@ async function loadDemo() {
   }
 }
 
+async function exportSheet() {
+  if (!notes || recording || !statusEl.hidden) return
+  sheetBtn.disabled = true
+  setStatus('Genero lo spartito PDF…', null)
+  try {
+    const { songToSheetPdf } = await import('./sheet')
+    const blob = await songToSheetPdf(notes, songTitle)
+    download(blob, `${safeName(songTitle)}.pdf`)
+    toast('Spartito PDF pronto')
+  } catch (error) {
+    fail(error)
+  } finally {
+    hideStatus()
+    syncUi()
+    poke()
+  }
+}
+
 async function exportVideo() {
   if (!player || !notes || recording) return
   if (!canRecord()) {
@@ -914,6 +934,10 @@ zoomBtn.addEventListener('click', () => {
 midiBtn.addEventListener('click', () => {
   if (!notes) return
   download(songToMidiBlob(notes, songTitle), `${safeName(songTitle)}.mid`)
+})
+
+sheetBtn.addEventListener('click', () => {
+  void exportSheet()
 })
 
 videoBtn.addEventListener('click', () => {
