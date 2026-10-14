@@ -12,6 +12,7 @@ RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY scripts/copy-model.mjs ./scripts/copy-model.mjs
 RUN npm ci
 
 COPY . .
