@@ -72,12 +72,16 @@ const raw = readFileSync(out, 'utf8')
 const lines = raw.split(/\r?\n/)
 const kept = []
 for (const line of lines) {
-  if (!line || line.startsWith('#')) {
-    if (line.startsWith('#') || line === '') kept.push(line)
+  if (!line) continue
+  // Real comments only — #HttpOnly_… is a cookie line, not a comment.
+  if (line.startsWith('#') && !line.startsWith('#HttpOnly_')) {
+    kept.push(line)
     continue
   }
   // Netscape: domain \t flag \t path \t secure \t expiry \t name \t value
-  const domain = line.includes('\t') ? line.split('\t')[0] : line.trim().split(/\s+/)[0]
+  // HttpOnly export: #HttpOnly_.youtube.com\tTRUE\t…
+  const field = line.startsWith('#HttpOnly_') ? line.slice('#HttpOnly_'.length) : line
+  const domain = field.includes('\t') ? field.split('\t')[0] : field.trim().split(/\s+/)[0]
   if (keepHost(domain)) kept.push(line)
 }
 

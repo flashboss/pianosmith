@@ -45,13 +45,15 @@ YouTube often blocks datacenter IPs. There is no fully automatic bypass inside t
    # or: npm run cookies:export -- firefox
    ```
 
-   The script **filters** to YouTube/Google cookies only and also writes **`yt-cookies.b64`** (one line). Railway multiline Variables often corrupt tabs/newlines and break yt-dlp — prefer Base64:
+   The script **filters** to YouTube hosts only and writes **`yt-cookies.b64`** (one line).
 
-   - set **`YTDLP_COOKIES_B64`** to the contents of `yt-cookies.b64` (recommended), or
-   - host `yt-cookies.txt` on a private URL and set **`YTDLP_COOKIES_URL`**, or
-   - mount a file and set **`YTDLP_COOKIES_FILE`**
+   **Important on Railway:** do **not** use multiline `YTDLP_COOKIES` (it corrupts TAB characters). Use only:
 
-   After deploy, `GET /api/health` should show `cookies.ok: true`. Re-run the export when downloads start failing again. Do not commit those cookie files.
+   1. Delete `YTDLP_COOKIES` if present  
+   2. Set **`YTDLP_COOKIES_B64`** = full contents of `yt-cookies.b64`  
+   3. Redeploy  
+
+   `GET /api/health` must show `"source":"b64"` and `"ok":true`. Alternatives: `YTDLP_COOKIES_URL` or `YTDLP_COOKIES_FILE`. Do not commit cookie files.
 
 2. **Residential proxy (unattended)** — set **`YTDLP_PROXY`** (or `HTTPS_PROXY`) to an HTTP/SOCKS proxy URL so yt-dlp exits through a non-datacenter IP. Best option if you want links to keep working without refreshing cookies.
 

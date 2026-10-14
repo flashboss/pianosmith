@@ -284,78 +284,102 @@ let cookiesMeta = { source: null, bytes: 0, ok: false, error: null }
  * Railway / UI env vars often flatten newlines or store literal \n / \t.
  * Netscape cookies need real newlines and tabs.
  */
+function recoverNetscapeLine(line) {
+  if (!line || line.includes('\t')) return line
+  if (line.startsWith('#') && !line.startsWith('#HttpOnly_')) return line
+  const httpOnly = line.startsWith('#HttpOnly_')
+  const body = httpOnly ? line.slice('#HttpOnly_'.length) : line
+  const parts = body.trim().split(/\s+/)
+  if (parts.length < 7 || !/[a-z0-9.-]+\.[a-z]{2,}/i.test(parts[0])) return line
+  const rebuilt = `${parts[0]}\t${parts[1]}\t${parts[2]}\t${parts[3]}\t${parts[4]}\t${parts[5]}\t${parts.slice(6).join(' ')}`
+  return httpOnly ? `#HttpOnly_${rebuilt}` : rebuilt
+}
+
 function normalizeCookiesText(raw) {
-  let text = String(raw || '').trim()
+  let text = String(raw || '').replace(/^\uFEFF/, '').trim()
   if (!text) return ''
   // Escaped newlines/tabs when a multiline secret was pasted as one line
   text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t')
   text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  // Some dashboards turn tabs into spaces; try to recover 7-field Netscape lines
-  text = text
-    .split('\n')
-    .map((line) => {
-      if (!line || line.startsWith('#') || line.includes('\t')) return line
-      const parts = line.trim().split(/\s+/)
-      if (parts.length >= 7 && /[a-z0-9.-]+\.[a-z]{2,}/i.test(parts[0])) {
-        return `${parts[0]}\t${parts[1]}\t${parts[2]}\t${parts[3]}\t${parts[4]}\t${parts[5]}\t${parts.slice(6).join(' ')}`
-      }
-      return line
-    })
-    .join('\n')
+  text = text.split('\n').map(recoverNetscapeLine).join('\n')
+  if (!/^(\s*#|$)/m.test(text) || !/# Netscape/i.test(text)) {
+    text = `# Netscape HTTP Cookie File\n# PianoSmith\n${text}`
+  }
   if (!text.endsWith('\n')) text += '\n'
   return text
 }
 
 function cookiesLookValid(text) {
-  const lines = text.split('\n').filter((line) => line && !line.startsWith('#'))
+  const lines = text.split('\n').filter((line) => {
+    if (!line) return false
+    if (line.startsWith('#HttpOnly_')) return true
+    if (line.startsWith('#')) return false
+    return true
+  })
   if (lines.length === 0) return false
-  return lines.some((line) => line.includes('\t') && /youtube|google|googlevideo/i.test(line))
+  return lines.some((line) => {
+    const body = line.startsWith('#HttpOnly_') ? line.slice('#HttpOnly_'.length) : line
+    return body.includes('\t') && /youtube|google|googlevideo/i.test(body)
+  })
 }
 
-function writeCookiesFile(raw) {
+/** Raw env paste without real tabs/newlines cannot be trusted — use Base64 instead. */
+function envCookiesTrustworthy(raw) {
+  return raw.includes('\t') || raw.includes('\\t') || (raw.includes('\n') && /youtube|google/i.test(raw))
+}
+
+function writeCookiesFile(raw, source) {
   const text = normalizeCookiesText(raw)
   if (!cookiesLookValid(text)) {
     throw new Error(
-      'Cookie YouTube non validi (serve formato Netscape con TAB). Riesegui npm run cookies:export e usa YTDLP_COOKIES_B64 oppure YTDLP_COOKIES_URL.',
+      `Cookie YouTube non validi (source=${source}). Elimina YTDLP_COOKIES, riesegui npm run cookies:export e imposta solo YTDLP_COOKIES_B64.`,
     )
   }
   cookiesPath = path.join(os.tmpdir(), 'pianosmith-yt-cookies.txt')
   writeFileSync(cookiesPath, text, 'utf8')
-  cookiesMeta = { source: cookiesMeta.source, bytes: Buffer.byteLength(text), ok: true, error: null }
+  cookiesMeta = { source, bytes: Buffer.byteLength(text), ok: true, error: null }
   return cookiesPath
 }
 
 /**
  * Resolve cookies for yt-dlp (first match wins):
- * YTDLP_COOKIES_FILE → YTDLP_COOKIES_B64 → YTDLP_COOKIES → YTDLP_COOKIES_URL
+ * YTDLP_COOKIES_B64 → YTDLP_COOKIES_FILE → YTDLP_COOKIES_URL → YTDLP_COOKIES
+ * Base64 is preferred because Railway multiline Variables corrupt Netscape tabs.
  */
 async function ensureYoutubeCookiesArgs() {
   if (cookiesReady) return cookiesReady
   cookiesReady = (async () => {
     try {
-      if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
-        cookiesMeta.source = 'file'
-        return ['--cookies', process.env.YTDLP_COOKIES_FILE]
-      }
       const b64 = process.env.YTDLP_COOKIES_B64?.trim()
       if (b64) {
-        cookiesMeta.source = 'b64'
         const decoded = Buffer.from(b64.replace(/\s+/g, ''), 'base64').toString('utf8')
-        return ['--cookies', writeCookiesFile(decoded)]
+        if (!/youtube|google|googlevideo/i.test(decoded)) {
+          throw new Error(
+            'YTDLP_COOKIES_B64 non decodifica un file cookie YouTube. Incolla il contenuto di yt-cookies.b64 (non il .txt).',
+          )
+        }
+        return ['--cookies', writeCookiesFile(decoded, 'b64')]
       }
-      const raw = process.env.YTDLP_COOKIES?.trim()
-      if (raw) {
-        cookiesMeta.source = 'env'
-        return ['--cookies', writeCookiesFile(raw)]
+      if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
+        cookiesMeta = { source: 'file', bytes: 0, ok: true, error: null }
+        return ['--cookies', process.env.YTDLP_COOKIES_FILE]
       }
       const url = process.env.YTDLP_COOKIES_URL?.trim()
       if (url) {
-        cookiesMeta.source = 'url'
         const response = await fetch(url, { redirect: 'follow' })
         if (!response.ok) throw new Error(`Cookie URL HTTP ${response.status}`)
         const text = await response.text()
         if (text.trim().length < 20) throw new Error('Cookie URL returned an empty file')
-        return ['--cookies', writeCookiesFile(text)]
+        return ['--cookies', writeCookiesFile(text, 'url')]
+      }
+      const raw = process.env.YTDLP_COOKIES?.trim()
+      if (raw) {
+        if (!envCookiesTrustworthy(raw)) {
+          throw new Error(
+            'YTDLP_COOKIES è corrotto (Railway spezza TAB/newline). Eliminalo e usa YTDLP_COOKIES_B64 da npm run cookies:export.',
+          )
+        }
+        return ['--cookies', writeCookiesFile(raw, 'env')]
       }
       cookiesMeta = { source: null, bytes: 0, ok: false, error: null }
       return []
@@ -364,7 +388,7 @@ async function ensureYoutubeCookiesArgs() {
         source: cookiesMeta.source,
         bytes: 0,
         ok: false,
-        error: String(error?.message || error).slice(0, 180),
+        error: String(error?.message || error).slice(0, 220),
       }
       cookiesReady = null
       throw error
@@ -440,8 +464,10 @@ function friendly(error) {
   }
   if (/ffmpeg|ffprobe/i.test(text)) return 'ffmpeg non è installato su questo computer'
   if (/does not pass|filtered|duration/i.test(text)) return 'Il video supera i 10 minuti'
-  if (/Cookie YouTube non validi|does not look like a Netscape|Netscape HTTP Cookie/i.test(text)) {
-    return 'Cookie YouTube non validi su Railway. Riesegui npm run cookies:export e imposta YTDLP_COOKIES_B64 (una riga), non il testo multilinea.'
+  if (/Cookie YouTube non validi|YTDLP_COOKIES|does not look like a Netscape/i.test(text)) {
+    return text.includes('YTDLP_COOKIES_B64') || text.includes('yt-cookies.b64')
+      ? text.slice(0, 240)
+      : 'Cookie YouTube non validi su Railway. Elimina YTDLP_COOKIES, riesegui npm run cookies:export e imposta solo YTDLP_COOKIES_B64 (contenuto di yt-cookies.b64).'
   }
   if (/proxy|tunnel connection failed/i.test(text)) {
     return 'Proxy non raggiungibile. Controlla YTDLP_PROXY / HTTPS_PROXY.'
