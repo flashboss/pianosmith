@@ -292,6 +292,12 @@ function youtubeCookiesArgs() {
   return ['--cookies', cookiesPath]
 }
 
+/** Optional HTTP(S) proxy so yt-dlp leaves from a residential IP instead of the cloud host. */
+function youtubeProxyArgs() {
+  const proxy = (process.env.YTDLP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').trim()
+  return proxy ? ['--proxy', proxy] : []
+}
+
 async function downloadYouTube(url, titleOverride) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'pianosmith-'))
   try {
@@ -321,6 +327,7 @@ async function downloadYouTube(url, titleOverride) {
       '--print',
       '%(title)s',
       ...youtubeCookiesArgs(),
+      ...youtubeProxyArgs(),
     ]
     const ffmpeg = ffmpegDir()
     if (ffmpeg) args.push('--ffmpeg-location', ffmpeg)
@@ -353,7 +360,7 @@ function friendly(error) {
   if (/ffmpeg|ffprobe/i.test(text)) return 'ffmpeg non è installato su questo computer'
   if (/does not pass|filtered|duration/i.test(text)) return 'Il video supera i 10 minuti'
   if (/sign in to confirm|not a bot|cookies? are (?:required|needed)|http error 403/i.test(text)) {
-    return 'YouTube blocca i download da questo server (IP cloud). Esporta i cookie del browser in un file e imposta YTDLP_COOKIES_FILE, oppure usa un file audio locale.'
+    return 'YouTube blocca i download da questo server (IP cloud). Usa npm run cookies:export e imposta YTDLP_COOKIES, oppure YTDLP_PROXY, oppure un file audio locale.'
   }
   if (/private|unavailable|confirm your age|sign in/i.test(text)) return 'Video non disponibile'
   if (text === 'Download scaduto') return 'Download scaduto. Riprova.'

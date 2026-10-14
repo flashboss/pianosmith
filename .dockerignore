@@ -1,6 +1,8 @@
 node_modules
 dist
 tizen-app
+yt-cookies.txt
+*.cookies.txt
 .git
 .github
 .DS_Store

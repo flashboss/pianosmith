@@ -1,6 +1,8 @@
 node_modules
 dist
 tizen-app
+yt-cookies.txt
+*.cookies.txt
 public/model
 .DS_Store
 *.wgt

@@ -36,7 +36,20 @@ That image:
 
 Point the host’s build at the Dockerfile (on Railway: Dockerfile builder). After deploy, open the public URL and leave the in-app **Server** field empty when the UI and API are on the same origin. Check `GET /api/health` — it should report `"ytdlp": true`.
 
-YouTube often blocks datacenter IPs. If downloads fail with a bot / sign-in error, export a Netscape `cookies.txt` from your browser and set **`YTDLP_COOKIES`** (file contents) or **`YTDLP_COOKIES_FILE`** (path in the container). Audio and MIDI file uploads still work without that.
+YouTube often blocks datacenter IPs. There is no fully automatic bypass inside the container alone; use one of these project-supported mitigations:
+
+1. **Browser cookies (semi-automatic)** — on your Mac, while logged into YouTube in Chrome/Firefox/Safari:
+
+   ```bash
+   npm run cookies:export
+   # or: npm run cookies:export -- firefox
+   ```
+
+   Copy `yt-cookies.txt` into the host secret **`YTDLP_COOKIES`** (file contents) or mount it and set **`YTDLP_COOKIES_FILE`**. Re-run when downloads start failing again (cookies expire). Do not commit that file.
+
+2. **Residential proxy (unattended)** — set **`YTDLP_PROXY`** (or `HTTPS_PROXY`) to an HTTP/SOCKS proxy URL so yt-dlp exits through a non-datacenter IP. Best option if you want links to keep working without refreshing cookies.
+
+3. **Skip remote YouTube** — drop an audio/MIDI file in the app (always works on-device).
 
 ```bash
 docker build -t pianosmith .

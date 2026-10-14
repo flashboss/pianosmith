@@ -9,6 +9,7 @@
     "dev": "node server/index.mjs",
     "build": "vite build && node scripts/stage-tizen.mjs",
     "start": "NODE_ENV=production node server/index.mjs",
+    "cookies:export": "node scripts/export-yt-cookies.mjs",
     "typecheck": "tsc --noEmit",
     "android:add": "npm run build && npx cap add android",
     "android:sync": "npm run build && npx cap sync android",
