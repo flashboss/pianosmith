@@ -22,8 +22,8 @@ const out = path.resolve('yt-cookies.txt')
 const allowed = new Set(['chrome', 'chromium', 'firefox', 'safari', 'edge', 'brave', 'opera'])
 
 /**
- * Keep YouTube media hosts + root/account Google cookies used for login/consent.
- * Drop product subdomains (mail, drive, meet, calendar, play, …).
+ * Keep only YouTube-related hosts (trial without .google.com auth cookies).
+ * If cloud downloads hit bot/sign-in blocks again, restore google.com / www.google.com.
  */
 function keepHost(domainField) {
   const host = String(domainField || '')
@@ -34,8 +34,6 @@ function keepHost(domainField) {
   if (host === 'youtube.com' || host.endsWith('.youtube.com')) return true
   if (host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com')) return true
   if (host === 'googlevideo.com' || host.endsWith('.googlevideo.com')) return true
-  // Root Google cookies only (SID/consent). Skip accounts.* and all Workspace product hosts.
-  if (host === 'google.com' || host === 'www.google.com') return true
   return false
 }
 
@@ -103,7 +101,7 @@ const cookieLines = kept.filter((line) => line && !line.startsWith('#')).length
 const bytes = Buffer.byteLength(filtered)
 const kb = (bytes / 1024).toFixed(1)
 console.log(`
-Wrote ${out} (${kb} KB, ${cookieLines} cookie lines — youtube/accounts/google root only)
+Wrote ${out} (${kb} KB, ${cookieLines} cookie lines — youtube hosts only, no .google.com)
 Wrote ${b64Path} (single-line Base64 for Railway Variables)
 
 Recommended on Railway:
