@@ -34,8 +34,8 @@ function keepHost(domainField) {
   if (host === 'youtube.com' || host.endsWith('.youtube.com')) return true
   if (host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com')) return true
   if (host === 'googlevideo.com' || host.endsWith('.googlevideo.com')) return true
-  // Auth / consent cookies live on the registrable Google domain or accounts — not on apps.
-  if (host === 'google.com' || host === 'www.google.com' || host === 'accounts.google.com') return true
+  // Root Google cookies only (SID/consent). Skip accounts.* and all Workspace product hosts.
+  if (host === 'google.com' || host === 'www.google.com') return true
   return false
 }
 
