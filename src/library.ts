@@ -1,3 +1,4 @@
+import { localeTag, t } from './i18n'
 import type { RawNote } from './types'
 
 const DB_NAME = 'pianosmith'
@@ -79,7 +80,7 @@ function openDb(): Promise<IDBDatabase> {
         reject(error)
       }
     }
-    request.onerror = () => reject(request.error || new Error('IndexedDB non disponibile'))
+    request.onerror = () => reject(request.error || new Error(t('idbUnavailable')))
   })
 }
 
@@ -99,15 +100,15 @@ async function migrateSongs(db: IDBDatabase): Promise<void> {
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error || new Error('Operazione IndexedDB non riuscita'))
+    request.onerror = () => reject(request.error || new Error(t('idbOpFailed')))
   })
 }
 
 function txDone(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error || new Error('Transazione IndexedDB non riuscita'))
-    tx.onabort = () => reject(tx.error || new Error('Transazione IndexedDB interrotta'))
+    tx.onerror = () => reject(tx.error || new Error(t('idbTxFailed')))
+    tx.onabort = () => reject(tx.error || new Error(t('idbTxAborted')))
   })
 }
 
@@ -232,22 +233,22 @@ export async function folderOptions(): Promise<Array<{ id: string; label: string
       parts.unshift(folder.name)
       current = folder.parentId || undefined
     }
-    return parts.join(' / ') || 'Cartella'
+    return parts.join(' / ') || t('folder')
   }
   return [
-    { id: ROOT_FOLDER_ID, label: 'Brani salvati' },
+    { id: ROOT_FOLDER_ID, label: t('savedSongs') },
     ...folders
       .map((folder) => ({ id: folder.id, label: labelFor(folder.id) }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'it')),
+      .sort((a, b) => a.label.localeCompare(b.label, localeTag())),
   ]
 }
 
 export async function createFolder(name: string, parentId = ROOT_FOLDER_ID): Promise<LibraryFolder> {
   const cleaned = cleanName(name)
-  if (!cleaned) throw new Error('Scrivi un nome per la cartella')
+  if (!cleaned) throw new Error(t('folderNameRequired'))
   const siblings = await listFolders(parentId)
   if (siblings.some((folder) => folder.name.toLowerCase() === cleaned.toLowerCase())) {
-    throw new Error('Esiste già una cartella con questo nome')
+    throw new Error(t('folderExists'))
   }
   const now = Date.now()
   const folder: LibraryFolder = {
@@ -266,10 +267,10 @@ export async function createFolder(name: string, parentId = ROOT_FOLDER_ID): Pro
 }
 
 export async function removeFolder(id: string): Promise<void> {
-  if (!id) throw new Error('Cartella non valida')
+  if (!id) throw new Error(t('folderInvalid'))
   const [children, songs] = await Promise.all([listFolders(id), listLibrarySongs(id)])
   if (children.length > 0 || songs.length > 0) {
-    throw new Error('Svuota la cartella prima di eliminarla')
+    throw new Error(t('folderNotEmpty'))
   }
   await withDb(async (db) => {
     const tx = db.transaction(FOLDERS, 'readwrite')
@@ -347,11 +348,11 @@ export async function moveLibrarySong(id: string, folderId: string): Promise<voi
     const tx = db.transaction([SONGS, FOLDERS], 'readwrite')
     const songs = tx.objectStore(SONGS)
     const song = (await requestToPromise(songs.get(id))) as LibrarySong | undefined
-    if (!song) throw new Error('Brano non trovato nella playlist')
+    if (!song) throw new Error(t('songNotFound'))
     const target = folderId || ROOT_FOLDER_ID
     if (target) {
       const folder = (await requestToPromise(tx.objectStore(FOLDERS).get(target))) as LibraryFolder | undefined
-      if (!folder) throw new Error('Cartella non trovata')
+      if (!folder) throw new Error(t('folderNotFound'))
     }
     song.folderId = target
     song.updatedAt = Date.now()

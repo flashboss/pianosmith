@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { jsPDF } from 'jspdf'
 import VexFlow, {
   Accidental,
@@ -264,7 +265,7 @@ function drawSystem(
  * Build a landscape A4 PDF of a simplified grand-staff transcription (4/4).
  */
 export async function songToSheetPdf(notes: NoteEvent[], title: string): Promise<Blob> {
-  if (notes.length === 0) throw new Error('Nessuna nota da mettere sullo spartito')
+  if (notes.length === 0) throw new Error(t('noNotesForSheet'))
   await waitForFonts()
 
   const bpm = estimateBpm(notes)

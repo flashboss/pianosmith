@@ -23,6 +23,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
+    <script src="i18n.js" defer></script>
   </head>
   <body>
     <header class="hero">
@@ -43,39 +44,39 @@
 
       <div class="hero-copy">
         <p class="brand">PianoSmith</p>
-        <h1>From a track to a piano tutorial.</h1>
-        <p class="lede">
+        <h1 data-i18n="headline">From a track to a piano tutorial.</h1>
+        <p class="lede" data-i18n="lede">
           Notes fall toward the keys, the keyboard lights up, and two hands play along — the picture you see is the video you export.
         </p>
         <div class="actions">
-          <a class="btn primary" href="https://github.com/flashboss/pianosmith#run-on-the-web">Get started</a>
-          <a class="btn ghost" href="https://github.com/flashboss/pianosmith">GitHub</a>
+          <a class="btn primary" href="https://github.com/flashboss/pianosmith#run-on-the-web" data-i18n="getStarted">Get started</a>
+          <a class="btn ghost" href="https://github.com/flashboss/pianosmith" data-i18n="github">GitHub</a>
         </div>
       </div>
     </header>
 
     <main>
       <section class="block">
-        <h2>One input. A playable lesson.</h2>
-        <p>
+        <h2 data-i18n="inputTitle">One input. A playable lesson.</h2>
+        <p data-i18n="inputBody">
           Drop an MP3, WAV, or MIDI file, paste a music link, or open the built-in demo. Transcription runs on your device with Spotify Basic Pitch; shared links use a small local helper with yt-dlp.
         </p>
       </section>
 
       <section class="block platforms">
-        <h2>Web, TV, and phone.</h2>
-        <p>
+        <h2 data-i18n="platformsTitle">Web, TV, and phone.</h2>
+        <p data-i18n="platformsBody">
           Run it in the browser, install the Samsung Tizen widget, or build the Android app. Local audio and MIDI work offline; point the Server field at your computer when you need a web link.
         </p>
       </section>
     </main>
 
     <footer>
-      <p>MIT License · © 2026 Luca Stancapiano</p>
+      <p data-i18n="licenseLine">MIT License · © 2026 Luca Stancapiano</p>
       <p>
-        <a href="https://github.com/flashboss/pianosmith">Source</a>
+        <a href="https://github.com/flashboss/pianosmith" data-i18n="source">Source</a>
         ·
-        <a href="https://github.com/flashboss/pianosmith/blob/main/LICENSE">License</a>
+        <a href="https://github.com/flashboss/pianosmith/blob/main/LICENSE" data-i18n="license">License</a>
       </p>
     </footer>
   </body>

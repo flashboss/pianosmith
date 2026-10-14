@@ -1,6 +1,7 @@
 import './style.css'
+import { initI18n, t } from './i18n'
 import { detectLink, fetchLink, linkServerAvailable, linkSourceName, serverBase } from './api'
-import { DEMO_TITLE, demoNotes } from './demo'
+import { demoNotes } from './demo'
 import { Visualizer } from './engine'
 import {
   ROOT_FOLDER_ID,
@@ -28,9 +29,11 @@ import { prepareNotes } from './theory'
 import { transcribeAudio } from './transcribe'
 import type { NoteEvent, RawNote } from './types'
 
+initI18n()
+
 const canvas = el<HTMLCanvasElement>('stage')
 const ctx = canvas.getContext('2d')
-if (!ctx) throw new Error('Canvas non disponibile')
+if (!ctx) throw new Error(t('canvasMissing'))
 
 const viz = new Visualizer(ctx)
 const gate = el<HTMLDivElement>('gate')
@@ -110,7 +113,7 @@ zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
-  if (!node) throw new Error(`Manca #${id}`)
+  if (!node) throw new Error(t('missingElement', { id }))
   return node as T
 }
 
@@ -174,7 +177,7 @@ function fail(error: unknown) {
   hideStatus()
   const aborted = error instanceof DOMException && error.name === 'AbortError'
   if (aborted) return
-  toast(error instanceof Error ? error.message : 'Qualcosa è andato storto')
+  toast(error instanceof Error ? error.message : t('somethingWrong'))
   syncUi()
 }
 
@@ -214,9 +217,9 @@ function syncSeekControls() {
   seekStepBtn.textContent = label
   seekBackBtn.textContent = `−${label}`
   seekForwardBtn.textContent = `+${label}`
-  seekBackBtn.setAttribute('aria-label', `Indietro di ${seekStep} secondi`)
-  seekForwardBtn.setAttribute('aria-label', `Avanti di ${seekStep} secondi`)
-  seekStepBtn.setAttribute('aria-label', `Salti di ${seekStep} secondi`)
+  seekBackBtn.setAttribute('aria-label', t('seekBackAria', { n: seekStep }))
+  seekForwardBtn.setAttribute('aria-label', t('seekForwardAria', { n: seekStep }))
+  seekStepBtn.setAttribute('aria-label', t('seekStepAria', { n: seekStep }))
 }
 
 function setSeekStep(next: number) {
@@ -250,7 +253,7 @@ function syncUi() {
   const duration = player?.duration ?? 0
   clock.textContent = `${fmt(time)} / ${fmt(duration)}`
   if (!scrubbing && duration > 0) scrub.value = String(Math.round((time / duration) * 1000))
-  playBtn.textContent = player?.playing ? 'Pausa' : 'Play'
+  playBtn.textContent = player?.playing ? t('pause') : t('play')
   speedBtn.textContent = `${player?.rate ?? 1}×`
   if (recording) topbar.classList.add('hidden')
   else if (!player?.playing) topbar.classList.remove('hidden')
@@ -276,7 +279,7 @@ function syncUi() {
 
 async function startSong(title: string, nextNotes: NoteEvent[], buffer: AudioBuffer, alive: () => boolean) {
   if (!alive()) return
-  if (nextNotes.length === 0) throw new Error('Non ho trovato note di pianoforte in questo audio')
+  if (nextNotes.length === 0) throw new Error(t('noPianoNotes'))
   const transport = ensurePlayer()
   notes = nextNotes
   songTitle = title
@@ -320,7 +323,7 @@ function isMidiBytes(data: ArrayBuffer): boolean {
 }
 
 function libraryLabel(item: LibrarySongMeta): string {
-  const kind = item.kind === 'midi' ? 'MIDI' : 'Audio'
+  const kind = item.kind === 'midi' ? t('kindMidi') : t('kindAudio')
   const duration = formatDuration(item.duration)
   return duration ? `${kind} · ${duration}` : kind
 }
@@ -328,10 +331,10 @@ function libraryLabel(item: LibrarySongMeta): string {
 async function refreshLibraryButton() {
   try {
     const count = await countLibrarySongs()
-    libraryOpenBtn.textContent = count > 0 ? `Brani salvati · ${count}` : 'Brani salvati'
+    libraryOpenBtn.textContent = count > 0 ? t('savedSongsCount', { n: count }) : t('savedSongs')
   } catch (error) {
     console.error(error)
-    libraryOpenBtn.textContent = 'Brani salvati'
+    libraryOpenBtn.textContent = t('savedSongs')
   }
 }
 
@@ -354,7 +357,7 @@ function renderLibraryPath(path: Array<{ id: string; name: string }>) {
   root.type = 'button'
   root.dataset.library = 'goto'
   root.dataset.id = ROOT_FOLDER_ID
-  root.textContent = 'Brani salvati'
+  root.textContent = t('savedSongs')
   if (!path.length) root.setAttribute('aria-current', 'page')
   libraryPath.append(root)
   for (const [index, folder] of path.entries()) {
@@ -406,7 +409,7 @@ function appendLibraryRow(options: {
     move.className = 'library-move'
     move.dataset.library = 'move'
     move.dataset.id = options.id
-    move.setAttribute('aria-label', `Sposta ${options.title}`)
+    move.setAttribute('aria-label', t('moveSong', { title: options.title }))
     for (const option of libraryMoveOptions) {
       const node = document.createElement('option')
       node.value = option.id
@@ -422,7 +425,7 @@ function appendLibraryRow(options: {
   remove.className = 'library-remove'
   remove.dataset.library = options.kind === 'folder' ? 'remove-folder' : 'remove'
   remove.dataset.id = options.id
-  remove.setAttribute('aria-label', options.kind === 'folder' ? `Elimina cartella ${options.title}` : `Rimuovi ${options.title}`)
+  remove.setAttribute('aria-label', options.kind === 'folder' ? t('deleteFolder', { title: options.title }) : t('removeSong', { title: options.title }))
   remove.textContent = '×'
   actions.append(remove)
 
@@ -446,7 +449,7 @@ async function renderLibraryBrowser() {
         kind: 'folder',
         id: folder.id,
         title: folder.name,
-        meta: 'Cartella',
+        meta: t('folder'),
       })
     }
     for (const song of songs) {
@@ -461,7 +464,7 @@ async function renderLibraryBrowser() {
     libraryEmpty.hidden = folders.length > 0 || songs.length > 0
   } catch (error) {
     console.error(error)
-    toast(error instanceof Error ? error.message : 'Playlist non disponibile')
+    toast(error instanceof Error ? error.message : t('playlistUnavailable'))
   }
 }
 
@@ -485,18 +488,18 @@ async function loadSaved(id: string) {
   const transport = ensurePlayer()
   await transport.resume()
   try {
-    setStatus('Apro il brano salvato…', null)
+    setStatus(t('openingSaved'), null)
     const song = await getLibrarySong(id)
-    if (!song) throw new Error('Brano non trovato nella playlist')
+    if (!song) throw new Error(t('songNotFound'))
     if (!job.alive()) return
     const next = prepareNotes(song.notes)
     if (song.kind === 'midi') {
-      setStatus('Genero il suono del pianoforte…', null)
+      setStatus(t('renderingPiano'), null)
       const buffer = await renderPiano(next)
       await startSong(song.title, next, buffer, job.alive)
       return
     }
-    setStatus('Carico l’audio…', 0.08)
+    setStatus(t('loadingAudio'), 0.08)
     const audio = await transport.decode(song.data.slice(0))
     if (!job.alive()) return
     await startSong(song.title, next, audio, job.alive)
@@ -512,7 +515,7 @@ async function removeSaved(id: string) {
     await refreshLibraryButton()
     await renderLibraryBrowser()
   } catch (error) {
-    toast(error instanceof Error ? error.message : 'Non sono riuscito a rimuovere il brano')
+    toast(error instanceof Error ? error.message : t('removeSongFail'))
   }
 }
 
@@ -523,12 +526,12 @@ async function loadFile(file: File) {
   const source = fileSourceKey(file)
   try {
     if (isMidiFile(file)) {
-      setStatus('Leggo il MIDI…', null)
+      setStatus(t('readingMidi'), null)
       const bytes = await file.arrayBuffer()
       const parsed = notesFromMidi(bytes)
       const next = prepareNotes(parsed.notes)
       if (!job.alive()) return
-      setStatus('Genero il suono del pianoforte…', null)
+      setStatus(t('renderingPiano'), null)
       const buffer = await renderPiano(next)
       const title = file.name.replace(/\.(mid|midi)$/i, '') || parsed.title
       await startSong(title, next, buffer, job.alive)
@@ -545,8 +548,8 @@ async function loadFile(file: File) {
       }
       return
     }
-    if (file.size > 45 * 1024 * 1024) throw new Error('File troppo grande (massimo 45 MB)')
-    setStatus('Carico l’audio…', 0.04)
+    if (file.size > 45 * 1024 * 1024) throw new Error(t('fileTooBig'))
+    setStatus(t('loadingAudio'), 0.04)
     const bytes = await file.arrayBuffer()
     const audio = await transport.decode(bytes.slice(0))
     if (!job.alive()) return
@@ -576,7 +579,7 @@ async function loadFile(file: File) {
 async function loadLink(url: string) {
   const sourceName = linkSourceName(url)
   if (!detectLink(url)) {
-    toast('Incolla un link http o https')
+    toast(t('pasteLink'))
     return
   }
   const job = beginJob()
@@ -585,19 +588,19 @@ async function loadLink(url: string) {
   const source = linkSourceKey(url)
   try {
     const fileSource =
-      sourceName === 'file audio' ||
+      detectLink(url) === 'audio' ||
       /^(?:MIDI|MP3|WAV|FLAC|M4A|AAC|OGG|OPUS|OGA|WEBM|AIF|AIFF|WMA|ALAC|CAF)$/.test(sourceName)
-    setStatus(fileSource ? 'Scarico il file…' : `Scarico l’audio da ${sourceName}…`, null)
+    setStatus(fileSource ? t('downloadingFile') : t('downloadingFrom', { source: sourceName }), null)
     const downloaded = await fetchLink(url, job.signal)
     if (!job.alive()) return
     const bytes = await downloaded.blob.arrayBuffer()
     const midi = sourceName === 'MIDI' || downloaded.blob.type.includes('midi') || isMidiBytes(bytes)
     if (midi) {
-      setStatus('Leggo il MIDI…', null)
+      setStatus(t('readingMidi'), null)
       const parsed = notesFromMidi(bytes)
       const next = prepareNotes(parsed.notes)
       if (!job.alive()) return
-      setStatus('Genero il suono del pianoforte…', null)
+      setStatus(t('renderingPiano'), null)
       const buffer = await renderPiano(next)
       const title = downloaded.title || parsed.title
       await startSong(title, next, buffer, job.alive)
@@ -614,8 +617,8 @@ async function loadLink(url: string) {
       }
       return
     }
-    if (bytes.byteLength > 45 * 1024 * 1024) throw new Error('File troppo grande (massimo 45 MB)')
-    setStatus('Carico l’audio…', 0.05)
+    if (bytes.byteLength > 45 * 1024 * 1024) throw new Error(t('fileTooBig'))
+    setStatus(t('loadingAudio'), 0.05)
     const audio = await transport.decode(bytes.slice(0))
     if (!job.alive()) return
     const raw = await transcribeAudio(audio, (label, ratio) => {
@@ -645,10 +648,10 @@ async function loadDemo() {
   const transport = ensurePlayer()
   await transport.resume()
   try {
-    setStatus('Preparo la demo…', null)
+    setStatus(t('preparingDemo'), null)
     const next = prepareNotes(demoNotes())
     const buffer = await renderPiano(next)
-    await startSong(DEMO_TITLE, next, buffer, job.alive)
+    await startSong(t('demoTitle'), next, buffer, job.alive)
   } catch (error) {
     if (!job.alive()) return
     fail(error)
@@ -659,12 +662,12 @@ async function exportSheet() {
   if (!notes || recording || !statusEl.hidden) return
   closeSettingsModal()
   sheetBtn.disabled = true
-  setStatus('Genero lo spartito PDF…', null)
+  setStatus(t('generatingSheet'), null)
   try {
     const { songToSheetPdf } = await import('./sheet')
     const blob = await songToSheetPdf(notes, songTitle)
     download(blob, `${safeName(songTitle)}.pdf`)
-    toast('Spartito PDF pronto')
+    toast(t('sheetReady'))
   } catch (error) {
     fail(error)
   } finally {
@@ -677,7 +680,7 @@ async function exportSheet() {
 async function exportVideo() {
   if (!player || !notes || recording) return
   if (!canRecord()) {
-    toast('Questo browser non può registrare il video. Usa Chrome o Edge.')
+    toast(t('noVideoRecord'))
     return
   }
   closeSettingsModal()
@@ -813,7 +816,7 @@ libraryModal.addEventListener('click', (event) => {
         await renderLibraryBrowser()
       })
       .catch((error: unknown) => {
-        toast(error instanceof Error ? error.message : 'Non sono riuscito a eliminare la cartella')
+        toast(error instanceof Error ? error.message : t('deleteFolderFail'))
       })
   }
 })
@@ -826,7 +829,7 @@ libraryBrowser.addEventListener('change', (event) => {
   void moveLibrarySong(songId, folderId)
     .then(renderLibraryBrowser)
     .catch((error: unknown) => {
-      toast(error instanceof Error ? error.message : 'Non sono riuscito a spostare il brano')
+      toast(error instanceof Error ? error.message : t('moveSongFail'))
       void renderLibraryBrowser()
     })
 })
@@ -842,7 +845,7 @@ libraryFolderForm.addEventListener('submit', (event) => {
       await renderLibraryBrowser()
     })
     .catch((error: unknown) => {
-      toast(error instanceof Error ? error.message : 'Non sono riuscito a creare la cartella')
+      toast(error instanceof Error ? error.message : t('createFolderFail'))
     })
 })
 
@@ -1405,19 +1408,17 @@ async function refreshLinkServer() {
   const base = serverBase()
   const ok = await linkServerAvailable()
   if (ok) {
-    hint.textContent = base ? `Link musicali tramite ${base}` : 'Link musicali pronti su questo computer.'
+    hint.textContent = base ? t('linksVia', { base }) : t('linksReady')
     return
   }
-  hint.textContent = base
-    ? 'Server non raggiungibile. Controlla l’indirizzo e che PianoSmith sia avviato.'
-    : 'I link richiedono il server sul computer (yt-dlp). I file audio funzionano lo stesso.'
+  hint.textContent = base ? t('serverUnreachable') : t('linksNeedServer')
 }
 
 function showDetectedLink() {
   const name = linkSourceName(ytInput.value)
   const label = document.getElementById('link-kind')
   if (!label) return
-  label.textContent = name ? `Riconosciuto: ${name}` : ''
+  label.textContent = name ? t('recognized', { name }) : ''
 }
 
 ytInput.addEventListener('input', showDetectedLink)

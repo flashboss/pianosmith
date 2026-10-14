@@ -1,3 +1,4 @@
+import { t } from './i18n'
 export class Player {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
@@ -40,18 +41,18 @@ export class Player {
 
   async decode(data: ArrayBuffer): Promise<AudioBuffer> {
     await this.resume()
-    if (!this.ctx) throw new Error('Audio non disponibile')
+    if (!this.ctx) throw new Error(t('audioUnavailable'))
     try {
       return await this.ctx.decodeAudioData(data.slice(0))
     } catch {
-      throw new Error('Formato audio non supportato. Prova MP3, WAV o M4A.')
+      throw new Error(t('audioFormatUnsupported'))
     }
   }
 
   audioTrack(): MediaStreamTrack {
     this.ensureGraph()
     const track = this.streamDest?.stream.getAudioTracks()[0]
-    if (!track) throw new Error('Audio non disponibile')
+    if (!track) throw new Error(t('audioUnavailable'))
     return track
   }
 

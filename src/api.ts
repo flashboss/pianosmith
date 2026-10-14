@@ -1,3 +1,4 @@
+import { t } from './i18n'
 export type LinkKind = 'youtube' | 'spotify' | 'audio' | 'web'
 
 const AUDIO_EXT = /\.(mp3|wav|wave|flac|m4a|aac|ogg|opus|oga|webm|aif|aiff|wma|alac|caf|mid|midi)(?=$|[?#])/i
@@ -63,13 +64,13 @@ export function linkSourceName(input: string): string {
   if (kind === 'audio') {
     const match = input.trim().match(AUDIO_EXT)
     const ext = match?.[1]?.toLowerCase()
-    if (!ext) return 'file audio'
+    if (!ext) return t('audioFile')
     if (ext === 'mid' || ext === 'midi') return 'MIDI'
     if (ext === 'wave') return 'WAV'
     return ext.toUpperCase()
   }
   const host = hostOf(input)
-  if (!host) return 'link web'
+  if (!host) return t('webLink')
   for (const [pattern, label] of KNOWN_HOSTS) {
     if (pattern.test(host)) return label
   }
@@ -89,7 +90,7 @@ export async function fetchLink(input: string, signal?: AbortSignal): Promise<{ 
     signal,
   })
   if (!response.ok) {
-    let message = 'Download non riuscito'
+    let message = t('downloadFailed')
     try {
       const body = (await response.json()) as { message?: string }
       if (body.message) message = body.message
@@ -99,7 +100,7 @@ export async function fetchLink(input: string, signal?: AbortSignal): Promise<{ 
     throw new Error(message)
   }
   const encoded = response.headers.get('X-Song-Title') || ''
-  let title = 'Audio'
+  let title = t('kindAudio')
   try {
     title = decodeURIComponent(encoded) || title
   } catch {

@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import type { Player } from './player'
 
 function supportedMime(): string | null {
@@ -16,7 +17,7 @@ export async function recordSong(
   untilDone: () => Promise<void>,
 ): Promise<Blob> {
   const mimeType = supportedMime()
-  if (!mimeType) throw new Error('Questo browser non può registrare il video')
+  if (!mimeType) throw new Error(t('cannotRecordVideo'))
   await player.resume()
   const stream = new MediaStream([canvas.captureStream(30).getVideoTracks()[0], player.audioTrack()])
   const recorder = new MediaRecorder(stream, {
@@ -30,7 +31,7 @@ export async function recordSong(
   }
   const stopped = new Promise<Blob>((resolve, reject) => {
     recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
-    recorder.onerror = () => reject(new Error('Registrazione interrotta'))
+    recorder.onerror = () => reject(new Error(t('recordingInterrupted')))
   })
   recorder.start(250)
   try {

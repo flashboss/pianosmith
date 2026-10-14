@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
   </head>
   <body>
-    <canvas id="stage" aria-label="Tutorial di pianoforte"></canvas>
+    <canvas id="stage" data-i18n-aria-label="stageAria" aria-label="Piano tutorial"></canvas>
     <div id="app">
       <div id="topbar" hidden>
         <div class="row">
@@ -20,44 +20,53 @@
           <div id="song-title"></div>
           <div class="spacer"></div>
           <span id="clock">0:00 / 0:00</span>
-          <button id="seek-back" type="button" aria-label="Indietro">−</button>
-          <button id="play" type="button">Play</button>
-          <button id="seek-forward" type="button" aria-label="Avanti">+</button>
-          <button id="seek-step" type="button" aria-label="Secondi di salto">2s</button>
-          <button id="settings-open" type="button" aria-haspopup="dialog" aria-controls="settings-modal">Opzioni</button>
-          <button id="reset" type="button">Nuovo</button>
+          <button id="seek-back" type="button" data-i18n-aria-label="seekBack" aria-label="Back">−</button>
+          <button id="play" type="button" data-i18n="play">Play</button>
+          <button id="seek-forward" type="button" data-i18n-aria-label="seekForward" aria-label="Forward">+</button>
+          <button id="seek-step" type="button" data-i18n-aria-label="seekStep" aria-label="Seek step">2s</button>
+          <button id="settings-open" type="button" data-i18n="options" aria-haspopup="dialog" aria-controls="settings-modal">Options</button>
+          <button id="reset" type="button" data-i18n="newSong">New</button>
         </div>
-        <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Posizione" />
+        <input id="scrub" type="range" min="0" max="1000" value="0" step="1" data-i18n-aria-label="scrub" aria-label="Position" />
       </div>
 
       <div id="gate">
         <form id="panel">
-          <button id="gate-close" type="button" class="ghost" hidden aria-label="Torna al brano">×</button>
+          <button id="gate-close" type="button" class="ghost" hidden data-i18n-aria-label="closeSong" aria-label="Back to the song">×</button>
           <h1>PianoSmith</h1>
-          <p class="lead">
-            Da un audio o da un link crea un tutorial con le note che scendono e le due mani sul pianoforte.
+          <p class="lead" data-i18n="lead">
+            From an audio file or a link, create a tutorial with falling notes and two hands on the piano.
           </p>
           <label id="drop" class="drop">
             <input id="file" type="file" accept="audio/*,.mid,.midi,.mp3,.wav,.ogg,.flac,.m4a,.aac,.webm" />
-            <strong>Trascina un audio o un MIDI</strong>
-            <span>MP3, WAV, M4A, FLAC o file MIDI</span>
+            <strong data-i18n="dropTitle">Drop an audio or MIDI file</strong>
+            <span data-i18n="dropHint">MP3, WAV, M4A, FLAC, or MIDI</span>
           </label>
           <div class="yt">
-            <input id="yt" type="text" inputmode="url" placeholder="Link del brano" autocomplete="off" aria-label="Link del brano" />
-            <button id="yt-go" type="submit">Crea</button>
+            <input
+              id="yt"
+              type="text"
+              inputmode="url"
+              data-i18n-placeholder="songLink"
+              data-i18n-aria-label="songLink"
+              placeholder="Song link"
+              autocomplete="off"
+              aria-label="Song link"
+            />
+            <button id="yt-go" type="submit" data-i18n="create">Create</button>
           </div>
           <p id="link-kind" class="hint"></p>
           <p id="yt-hint" class="hint"></p>
-          <button id="demo" type="button" class="ghost wide">Guarda la demo</button>
-          <button id="library-open" type="button" class="ghost wide">Brani salvati</button>
+          <button id="demo" type="button" class="ghost wide" data-i18n="watchDemo">Watch the demo</button>
+          <button id="library-open" type="button" class="ghost wide" data-i18n="savedSongs">Saved songs</button>
           <details>
-            <summary>TV, telefono e server</summary>
+            <summary data-i18n="tvPhoneServer">TV, phone, and server</summary>
             <label class="server">
-              Server
+              <span data-i18n="server">Server</span>
               <input id="server" type="url" placeholder="http://192.168.0.10:5173" autocomplete="off" />
             </label>
-            <p class="hint">
-              I file audio e i MIDI funzionano sul dispositivo. Per un link indica l’indirizzo del computer dove è avviato PianoSmith.
+            <p class="hint" data-i18n="serverHint">
+              Audio and MIDI files work on this device. For a link, enter the address of the computer running PianoSmith.
             </p>
           </details>
         </form>
@@ -65,39 +74,39 @@
 
       <div id="status" hidden>
         <div class="card">
-          <p id="status-text">Trascrizione…</p>
+          <p id="status-text" data-i18n="statusDefault">Transcribing…</p>
           <div class="bar"><div id="status-fill"></div></div>
-          <button id="cancel" type="button" class="ghost">Annulla</button>
+          <button id="cancel" type="button" class="ghost" data-i18n="cancel">Cancel</button>
         </div>
       </div>
 
-      <button id="center-play" type="button" hidden aria-label="Play">▶</button>
+      <button id="center-play" type="button" hidden data-i18n-aria-label="play" aria-label="Play">▶</button>
       <div id="rec" hidden>REC</div>
       <div id="toast" hidden></div>
-      <div id="rotate">Ruota il dispositivo in orizzontale</div>
+      <div id="rotate" data-i18n="rotate">Rotate the device to landscape</div>
 
       <div id="settings-modal" class="modal" hidden>
         <div class="modal-backdrop" data-settings="close"></div>
         <div class="modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <div class="modal-head">
-            <h2 id="settings-title">Opzioni</h2>
-            <button id="settings-close" type="button" class="ghost" data-settings="close" aria-label="Chiudi">×</button>
+            <h2 id="settings-title" data-i18n="settingsTitle">Options</h2>
+            <button id="settings-close" type="button" class="ghost" data-settings="close" data-i18n-aria-label="close" aria-label="Close">×</button>
           </div>
-          <section class="settings-section" aria-label="Visualizzazione">
-            <h3>Visualizzazione</h3>
+          <section class="settings-section" data-i18n-aria-label="display" aria-label="Display">
+            <h3 data-i18n="display">Display</h3>
             <div class="settings-grid">
-              <button id="names" type="button" aria-pressed="false">Nomi</button>
-              <button id="hands" type="button" aria-pressed="true">Mani</button>
-              <button id="zoom" type="button" aria-pressed="false">Zoom</button>
+              <button id="names" type="button" data-i18n="names" aria-pressed="false">Names</button>
+              <button id="hands" type="button" data-i18n="hands" aria-pressed="true">Hands</button>
+              <button id="zoom" type="button" data-i18n="zoom" aria-pressed="false">Zoom</button>
               <button id="speed" type="button">1×</button>
             </div>
           </section>
-          <section class="settings-section" aria-label="Esporta">
-            <h3>Esporta</h3>
+          <section class="settings-section" data-i18n-aria-label="export" aria-label="Export">
+            <h3 data-i18n="export">Export</h3>
             <div class="settings-grid">
               <button id="midi" type="button">MIDI</button>
-              <button id="sheet" type="button">Spartito</button>
-              <button id="video" type="button">Video</button>
+              <button id="sheet" type="button" data-i18n="sheet">Sheet</button>
+              <button id="video" type="button" data-i18n="video">Video</button>
             </div>
           </section>
         </div>
@@ -107,20 +116,27 @@
         <div class="modal-backdrop" data-library="close"></div>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="library-title">
           <div class="modal-head">
-            <h2 id="library-title">Brani salvati</h2>
-            <button id="library-close" type="button" class="ghost" data-library="close" aria-label="Chiudi">×</button>
+            <h2 id="library-title" data-i18n="libraryTitle">Saved songs</h2>
+            <button id="library-close" type="button" class="ghost" data-library="close" data-i18n-aria-label="close" aria-label="Close">×</button>
           </div>
-          <nav id="library-path" class="library-path" aria-label="Percorso cartelle"></nav>
+          <nav id="library-path" class="library-path" data-i18n-aria-label="libraryPath" aria-label="Folder path"></nav>
           <div class="library-toolbar">
-            <button id="library-new-folder" type="button" class="ghost">Nuova cartella</button>
+            <button id="library-new-folder" type="button" class="ghost" data-i18n="newFolder">New folder</button>
           </div>
           <form id="library-folder-form" class="library-folder-form" hidden>
-            <input id="library-folder-name" type="text" maxlength="80" placeholder="Nome cartella" autocomplete="off" />
-            <button type="submit">Crea</button>
-            <button id="library-folder-cancel" type="button" class="ghost">Annulla</button>
+            <input
+              id="library-folder-name"
+              type="text"
+              maxlength="80"
+              data-i18n-placeholder="folderName"
+              placeholder="Folder name"
+              autocomplete="off"
+            />
+            <button type="submit" data-i18n="folderCreate">Create</button>
+            <button id="library-folder-cancel" type="button" class="ghost" data-i18n="folderCancel">Cancel</button>
           </form>
           <ul id="library-browser" class="library-browser"></ul>
-          <p id="library-empty" class="hint" hidden>Questa cartella è vuota.</p>
+          <p id="library-empty" class="hint" hidden data-i18n="libraryEmpty">This folder is empty.</p>
         </div>
       </div>
     </div>

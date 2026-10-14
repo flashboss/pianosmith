@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import type { RawNote } from './types'
 
 let modelPromise: Promise<import('@spotify/basic-pitch').BasicPitch> | null = null
@@ -34,9 +35,9 @@ export async function transcribeAudio(
   buffer: AudioBuffer,
   onProgress: (label: string, ratio: number | null) => void,
 ): Promise<RawNote[]> {
-  onProgress('Carico il modello di trascrizione…', null)
+  onProgress(t('loadModel'), null)
   const basicPitch = await loadModel()
-  onProgress('Preparo l’audio…', 0.02)
+  onProgress(t('prepareAudio'), 0.02)
   const mono = await toModelBuffer(buffer)
   const { noteFramesToTime, outputToNotesPoly } = await import('@spotify/basic-pitch')
 
@@ -50,11 +51,11 @@ export async function transcribeAudio(
       onsets.push(...onsetChunk)
     },
     (percent) => {
-      onProgress('Trascrivo le note…', percent)
+      onProgress(t('transcribing'), percent)
     },
   )
 
-  onProgress('Ricostruisco la partitura…', 1)
+  onProgress(t('rebuildScore'), 1)
   if (frames.length === 0) return []
 
   const events = outputToNotesPoly(frames, onsets, 0.34, 0.28, 5)

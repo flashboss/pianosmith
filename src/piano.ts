@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import type { RawNote } from './types'
 
 function noiseBuffer(ctx: BaseAudioContext): AudioBuffer {
@@ -74,7 +75,7 @@ function strike(
 }
 
 export async function renderPiano(notes: RawNote[]): Promise<AudioBuffer> {
-  if (notes.length === 0) throw new Error('Nessuna nota da suonare')
+  if (notes.length === 0) throw new Error(t('noNotesToPlay'))
   const end = notes.reduce((max, note) => Math.max(max, note.end), 0) + 2
   const ctx = new OfflineAudioContext(2, Math.ceil(end * 44100), 44100)
   const comp = ctx.createDynamicsCompressor()
