@@ -43,6 +43,9 @@ const seekBackBtn = el<HTMLButtonElement>('seek-back')
 const seekForwardBtn = el<HTMLButtonElement>('seek-forward')
 const seekStepBtn = el<HTMLButtonElement>('seek-step')
 const playBtn = el<HTMLButtonElement>('play')
+const settingsOpenBtn = el<HTMLButtonElement>('settings-open')
+const settingsModal = el<HTMLDivElement>('settings-modal')
+const settingsCloseBtn = el<HTMLButtonElement>('settings-close')
 const speedBtn = el<HTMLButtonElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
@@ -258,9 +261,14 @@ function syncUi() {
   seekBackBtn.disabled = !canSeek
   seekForwardBtn.disabled = !canSeek
   seekStepBtn.disabled = busy
+  settingsOpenBtn.disabled = !hasSong || busy
   midiBtn.disabled = !hasSong || busy
   sheetBtn.disabled = !hasSong || busy
   videoBtn.disabled = !hasSong || busy || !canRecord()
+  speedBtn.disabled = !hasSong || busy
+  namesBtn.disabled = !hasSong || busy
+  handsBtn.disabled = !hasSong || busy
+  zoomBtn.disabled = !hasSong || busy
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
   if (player?.playing) poke()
@@ -649,6 +657,7 @@ async function loadDemo() {
 
 async function exportSheet() {
   if (!notes || recording || !statusEl.hidden) return
+  closeSettingsModal()
   sheetBtn.disabled = true
   setStatus('Genero lo spartito PDF…', null)
   try {
@@ -671,6 +680,7 @@ async function exportVideo() {
     toast('Questo browser non può registrare il video. Usa Chrome o Edge.')
     return
   }
+  closeSettingsModal()
   recording = true
   document.body.classList.add('recording')
   topbar.classList.add('hidden')
@@ -744,6 +754,7 @@ function hideGate() {
 }
 
 function showLibrary() {
+  closeSettingsModal()
   player?.pause()
   gate.hidden = false
   topbar.classList.remove('hidden')
@@ -753,6 +764,7 @@ function showLibrary() {
 }
 
 libraryOpenBtn.setAttribute('aria-expanded', 'false')
+settingsOpenBtn.setAttribute('aria-expanded', 'false')
 libraryOpenBtn.addEventListener('click', () => {
   void openLibraryModal()
 })
@@ -834,6 +846,20 @@ libraryFolderForm.addEventListener('submit', (event) => {
     })
 })
 
+function openSettingsModal() {
+  if (!notes || recording || !statusEl.hidden) return
+  settingsModal.hidden = false
+  settingsOpenBtn.setAttribute('aria-expanded', 'true')
+  poke()
+  queueMicrotask(ensureTvFocus)
+}
+
+function closeSettingsModal() {
+  settingsModal.hidden = true
+  settingsOpenBtn.setAttribute('aria-expanded', 'false')
+  poke()
+}
+
 function dismissOverlays(event?: KeyboardEvent) {
   if (!libraryModal.hidden) {
     event?.preventDefault()
@@ -842,6 +868,11 @@ function dismissOverlays(event?: KeyboardEvent) {
       return true
     }
     closeLibraryModal()
+    return true
+  }
+  if (!settingsModal.hidden) {
+    event?.preventDefault()
+    closeSettingsModal()
     return true
   }
   if (!gate.hidden && canDismissGate()) {
@@ -903,11 +934,31 @@ canvas.addEventListener('click', () => {
   void ensurePlayer().toggle()
 })
 
+settingsOpenBtn.addEventListener('click', () => {
+  openSettingsModal()
+})
+
+settingsCloseBtn.addEventListener('click', () => {
+  closeSettingsModal()
+})
+
+settingsModal.addEventListener('pointerdown', (event) => {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  if (target === settingsModal || target.classList.contains('modal-backdrop')) closeSettingsModal()
+})
+
+settingsModal.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement | null
+  if (target?.dataset.settings === 'close') closeSettingsModal()
+})
+
 speedBtn.addEventListener('click', () => {
   if (!player) return
   const index = RATES.indexOf(player.rate)
   const next = RATES[(index + 1) % RATES.length] ?? 1
   void player.setRate(next)
+  syncUi()
 })
 
 namesBtn.addEventListener('click', () => {
@@ -1081,6 +1132,7 @@ function isVisibleFocusable(node: HTMLElement) {
 function tvFocusables(): HTMLElement[] {
   const roots: HTMLElement[] = []
   if (!libraryModal.hidden) roots.push(libraryModal)
+  else if (!settingsModal.hidden) roots.push(settingsModal)
   else if (!statusEl.hidden) roots.push(statusEl)
   else if (!gate.hidden) roots.push(gate)
   else if (!topbar.hidden) roots.push(topbar)

@@ -24,13 +24,7 @@
           <button id="play" type="button">Play</button>
           <button id="seek-forward" type="button" aria-label="Avanti">+</button>
           <button id="seek-step" type="button" aria-label="Secondi di salto">2s</button>
-          <button id="speed" type="button">1×</button>
-          <button id="names" type="button" aria-pressed="false">Nomi</button>
-          <button id="hands" type="button" aria-pressed="true">Mani</button>
-          <button id="zoom" type="button" aria-pressed="false">Zoom</button>
-          <button id="midi" type="button">MIDI</button>
-          <button id="sheet" type="button">Spartito</button>
-          <button id="video" type="button">Video</button>
+          <button id="settings-open" type="button" aria-haspopup="dialog" aria-controls="settings-modal">Opzioni</button>
           <button id="reset" type="button">Nuovo</button>
         </div>
         <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Posizione" />
@@ -81,6 +75,33 @@
       <div id="rec" hidden>REC</div>
       <div id="toast" hidden></div>
       <div id="rotate">Ruota il dispositivo in orizzontale</div>
+
+      <div id="settings-modal" class="modal" hidden>
+        <div class="modal-backdrop" data-settings="close"></div>
+        <div class="modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <div class="modal-head">
+            <h2 id="settings-title">Opzioni</h2>
+            <button id="settings-close" type="button" class="ghost" data-settings="close" aria-label="Chiudi">×</button>
+          </div>
+          <section class="settings-section" aria-label="Visualizzazione">
+            <h3>Visualizzazione</h3>
+            <div class="settings-grid">
+              <button id="names" type="button" aria-pressed="false">Nomi</button>
+              <button id="hands" type="button" aria-pressed="true">Mani</button>
+              <button id="zoom" type="button" aria-pressed="false">Zoom</button>
+              <button id="speed" type="button">1×</button>
+            </div>
+          </section>
+          <section class="settings-section" aria-label="Esporta">
+            <h3>Esporta</h3>
+            <div class="settings-grid">
+              <button id="midi" type="button">MIDI</button>
+              <button id="sheet" type="button">Spartito</button>
+              <button id="video" type="button">Video</button>
+            </div>
+          </section>
+        </div>
+      </div>
 
       <div id="library-modal" class="modal" hidden>
         <div class="modal-backdrop" data-library="close"></div>

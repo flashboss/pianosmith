@@ -30,7 +30,7 @@ canvas#stage {
 
 #app { position: fixed; inset: 0; pointer-events: none; }
 
-#topbar, #gate, #status, #center-play, #toast, #rotate, #rec, #library-modal {
+#topbar, #gate, #status, #center-play, #toast, #rotate, #rec, #library-modal, #settings-modal {
   pointer-events: auto;
 }
 
@@ -302,13 +302,43 @@ h1 {
   letter-spacing: -0.03em;
 }
 
-#library-close {
+#library-close,
+#settings-close {
   width: 40px;
   min-height: 40px;
   padding: 0;
   border-radius: 999px;
   font-size: 22px;
   line-height: 1;
+}
+
+.settings-card {
+  width: min(420px, 100%);
+}
+
+.settings-section {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-section h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-grid button {
+  width: 100%;
+  justify-self: stretch;
 }
 
 .library-path {
