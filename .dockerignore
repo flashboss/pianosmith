@@ -2,6 +2,7 @@ node_modules
 dist
 tizen-app
 yt-cookies.txt
+yt-cookies.b64
 *.cookies.txt
 .git
 .github

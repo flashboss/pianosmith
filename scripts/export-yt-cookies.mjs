@@ -81,20 +81,23 @@ const header = kept.some((line) => line.startsWith('# Netscape'))
   : '# Netscape HTTP Cookie File\n# Filtered for YouTube / Google (PianoSmith)\n'
 const filtered = `${header}${kept.join('\n').trim()}\n`
 writeFileSync(out, filtered, 'utf8')
+const b64Path = path.resolve('yt-cookies.b64')
+const b64 = Buffer.from(filtered, 'utf8').toString('base64')
+writeFileSync(b64Path, b64, 'utf8')
 
 const bytes = Buffer.byteLength(filtered)
 const kb = (bytes / 1024).toFixed(1)
 console.log(`
 Wrote ${out} (${kb} KB, YouTube/Google only)
+Wrote ${b64Path} (single-line Base64 for Railway Variables)
 
-Railway Variables (file is small enough for most plans):
-  1. Open the service → Variables
-  2. Set YTDLP_COOKIES to the contents of yt-cookies.txt
+Recommended on Railway:
+  1. Delete any broken YTDLP_COOKIES multiline variable
+  2. Add YTDLP_COOKIES_B64 = contents of yt-cookies.b64 (one line, paste works)
   3. Redeploy / restart
+  4. Check GET /api/health → cookies.ok should be true
 
-If the variable is still rejected:
-  - Host yt-cookies.txt on a private URL and set YTDLP_COOKIES_URL
-  - Or mount a volume and set YTDLP_COOKIES_FILE=/data/yt-cookies.txt
+Alternatives: YTDLP_COOKIES_URL or YTDLP_COOKIES_FILE.
 
-Do not commit yt-cookies.txt — it is a login secret.
+Do not commit yt-cookies.txt / yt-cookies.b64 — they are login secrets.
 `)

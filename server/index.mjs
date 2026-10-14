@@ -278,34 +278,97 @@ async function ytdlpAvailable() {
 let busy = false
 let cookiesPath = null
 let cookiesReady = null
+let cookiesMeta = { source: null, bytes: 0, ok: false, error: null }
+
+/**
+ * Railway / UI env vars often flatten newlines or store literal \n / \t.
+ * Netscape cookies need real newlines and tabs.
+ */
+function normalizeCookiesText(raw) {
+  let text = String(raw || '').trim()
+  if (!text) return ''
+  // Escaped newlines/tabs when a multiline secret was pasted as one line
+  text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // Some dashboards turn tabs into spaces; try to recover 7-field Netscape lines
+  text = text
+    .split('\n')
+    .map((line) => {
+      if (!line || line.startsWith('#') || line.includes('\t')) return line
+      const parts = line.trim().split(/\s+/)
+      if (parts.length >= 7 && /[a-z0-9.-]+\.[a-z]{2,}/i.test(parts[0])) {
+        return `${parts[0]}\t${parts[1]}\t${parts[2]}\t${parts[3]}\t${parts[4]}\t${parts[5]}\t${parts.slice(6).join(' ')}`
+      }
+      return line
+    })
+    .join('\n')
+  if (!text.endsWith('\n')) text += '\n'
+  return text
+}
+
+function cookiesLookValid(text) {
+  const lines = text.split('\n').filter((line) => line && !line.startsWith('#'))
+  if (lines.length === 0) return false
+  return lines.some((line) => line.includes('\t') && /youtube|google|googlevideo/i.test(line))
+}
 
 function writeCookiesFile(raw) {
+  const text = normalizeCookiesText(raw)
+  if (!cookiesLookValid(text)) {
+    throw new Error(
+      'Cookie YouTube non validi (serve formato Netscape con TAB). Riesegui npm run cookies:export e usa YTDLP_COOKIES_B64 oppure YTDLP_COOKIES_URL.',
+    )
+  }
   cookiesPath = path.join(os.tmpdir(), 'pianosmith-yt-cookies.txt')
-  writeFileSync(cookiesPath, raw.endsWith('\n') ? raw : `${raw}\n`, 'utf8')
+  writeFileSync(cookiesPath, text, 'utf8')
+  cookiesMeta = { source: cookiesMeta.source, bytes: Buffer.byteLength(text), ok: true, error: null }
   return cookiesPath
 }
 
 /**
  * Resolve cookies for yt-dlp (first match wins):
- * YTDLP_COOKIES_FILE → YTDLP_COOKIES → YTDLP_COOKIES_URL
+ * YTDLP_COOKIES_FILE → YTDLP_COOKIES_B64 → YTDLP_COOKIES → YTDLP_COOKIES_URL
  */
 async function ensureYoutubeCookiesArgs() {
   if (cookiesReady) return cookiesReady
   cookiesReady = (async () => {
-    if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
-      return ['--cookies', process.env.YTDLP_COOKIES_FILE]
+    try {
+      if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
+        cookiesMeta.source = 'file'
+        return ['--cookies', process.env.YTDLP_COOKIES_FILE]
+      }
+      const b64 = process.env.YTDLP_COOKIES_B64?.trim()
+      if (b64) {
+        cookiesMeta.source = 'b64'
+        const decoded = Buffer.from(b64.replace(/\s+/g, ''), 'base64').toString('utf8')
+        return ['--cookies', writeCookiesFile(decoded)]
+      }
+      const raw = process.env.YTDLP_COOKIES?.trim()
+      if (raw) {
+        cookiesMeta.source = 'env'
+        return ['--cookies', writeCookiesFile(raw)]
+      }
+      const url = process.env.YTDLP_COOKIES_URL?.trim()
+      if (url) {
+        cookiesMeta.source = 'url'
+        const response = await fetch(url, { redirect: 'follow' })
+        if (!response.ok) throw new Error(`Cookie URL HTTP ${response.status}`)
+        const text = await response.text()
+        if (text.trim().length < 20) throw new Error('Cookie URL returned an empty file')
+        return ['--cookies', writeCookiesFile(text)]
+      }
+      cookiesMeta = { source: null, bytes: 0, ok: false, error: null }
+      return []
+    } catch (error) {
+      cookiesMeta = {
+        source: cookiesMeta.source,
+        bytes: 0,
+        ok: false,
+        error: String(error?.message || error).slice(0, 180),
+      }
+      cookiesReady = null
+      throw error
     }
-    const raw = process.env.YTDLP_COOKIES?.trim()
-    if (raw) return ['--cookies', writeCookiesFile(raw)]
-    const url = process.env.YTDLP_COOKIES_URL?.trim()
-    if (url) {
-      const response = await fetch(url, { redirect: 'follow' })
-      if (!response.ok) throw new Error(`Cookie URL HTTP ${response.status}`)
-      const text = await response.text()
-      if (text.trim().length < 20) throw new Error('Cookie URL returned an empty file')
-      return ['--cookies', writeCookiesFile(text)]
-    }
-    return []
   })()
   return cookiesReady
 }
@@ -377,17 +440,26 @@ function friendly(error) {
   }
   if (/ffmpeg|ffprobe/i.test(text)) return 'ffmpeg non è installato su questo computer'
   if (/does not pass|filtered|duration/i.test(text)) return 'Il video supera i 10 minuti'
+  if (/Cookie YouTube non validi|does not look like a Netscape|Netscape HTTP Cookie/i.test(text)) {
+    return 'Cookie YouTube non validi su Railway. Riesegui npm run cookies:export e imposta YTDLP_COOKIES_B64 (una riga), non il testo multilinea.'
+  }
+  if (/proxy|tunnel connection failed/i.test(text)) {
+    return 'Proxy non raggiungibile. Controlla YTDLP_PROXY / HTTPS_PROXY.'
+  }
   if (/sign in to confirm|not a bot|cookies? are (?:required|needed)|http error 403/i.test(text)) {
-    return 'YouTube blocca i download da questo server (IP cloud). Usa npm run cookies:export e imposta YTDLP_COOKIES, oppure YTDLP_PROXY, oppure un file audio locale.'
+    return 'YouTube blocca i download da questo server (IP cloud). Imposta YTDLP_COOKIES_B64 (da npm run cookies:export), oppure YTDLP_PROXY, oppure usa un file audio locale.'
   }
   if (/private|unavailable|confirm your age|sign in/i.test(text)) return 'Video non disponibile'
   if (text === 'Download scaduto') return 'Download scaduto. Riprova.'
   if (/unsupported url|no suitable extractor|unable to extract|not a valid url/i.test(text)) {
     return 'Questo link non contiene un audio che posso scaricare'
   }
-  if (/Spotify|brano|Nessun audio|Link non valido|Il file ha risposto|Audio troppo grande|Audio scaricato vuoto/i.test(text)) {
+  if (/Spotify|brano|Nessun audio|Link non valido|Il file ha risposto|Audio troppo grande|Audio scaricato vuoto|Cookie URL/i.test(text)) {
     return text
   }
+  // Surface a short yt-dlp hint without dumping full stderr to clients.
+  const line = text.split('\n').map((part) => part.trim()).find(Boolean) || ''
+  if (line.length > 12 && line.length < 220 && !/node:|at |\/app\//i.test(line)) return line
   return 'Non sono riuscito a scaricare l’audio'
 }
 
@@ -560,7 +632,23 @@ const server = http.createServer(async (req, res) => {
   }
   try {
     if (url.pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, ytdlp: await ytdlpAvailable() })
+      const ytdlp = await ytdlpAvailable()
+      try {
+        await ensureYoutubeCookiesArgs()
+      } catch {
+        /* cookiesMeta already set */
+      }
+      sendJson(res, 200, {
+        ok: true,
+        ytdlp,
+        cookies: {
+          source: cookiesMeta.source,
+          bytes: cookiesMeta.bytes,
+          ok: cookiesMeta.ok,
+          error: cookiesMeta.error,
+          proxy: Boolean((process.env.YTDLP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').trim()),
+        },
+      })
       return
     }
     if ((url.pathname === '/api/link' || url.pathname === '/api/youtube') && req.method === 'POST') {
