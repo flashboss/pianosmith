@@ -1,0 +1,15 @@
+node_modules
+dist
+tizen-app
+.git
+.github
+.DS_Store
+*.wgt
+.tmp-hand*.png
+android/.gradle
+android/app/build
+android/build
+android/local.properties
+docs
+.idea
+.cursor
