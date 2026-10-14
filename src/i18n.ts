@@ -720,14 +720,16 @@ const TABLES: Record<Locale, Dict> = { it, en, fr, es, de, zh, ja }
 let locale: Locale = 'en'
 
 function matchLocale(tag: string): Locale | null {
-  const lower = tag.toLowerCase()
-  if (lower.startsWith('zh')) return 'zh'
-  if (lower.startsWith('ja')) return 'ja'
-  if (lower.startsWith('fr')) return 'fr'
-  if (lower.startsWith('es')) return 'es'
-  if (lower.startsWith('de')) return 'de'
-  if (lower.startsWith('it')) return 'it'
-  if (lower.startsWith('en')) return 'en'
+  // Browsers use it-IT; some runtimes report it_IT — normalize before matching.
+  const lower = tag.toLowerCase().replace(/_/g, '-')
+  const primary = lower.split('-')[0] ?? ''
+  if (primary === 'zh') return 'zh'
+  if (primary === 'ja') return 'ja'
+  if (primary === 'fr') return 'fr'
+  if (primary === 'es') return 'es'
+  if (primary === 'de') return 'de'
+  if (primary === 'it') return 'it'
+  if (primary === 'en') return 'en'
   return null
 }
 
