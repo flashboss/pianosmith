@@ -3,7 +3,7 @@
  * Export YouTube-related cookies from a local browser for remote PianoSmith hosts.
  *
  * Full browser dumps are huge and often exceed Railway variable size limits, so this
- * script keeps only YouTube / Google cookie lines (usually a few KB).
+ * script keeps only domains yt-dlp needs for YouTube (not Gmail/Drive/Meet/etc.).
  *
  * Usage:
  *   npm run cookies:export
@@ -11,10 +11,7 @@
  *   npm run cookies:export -- firefox
  *   npm run cookies:export -- safari
  *
- * Then either:
- *   - paste yt-cookies.txt into YTDLP_COOKIES (small enough after filtering), or
- *   - host the file privately and set YTDLP_COOKIES_URL, or
- *   - mount the file and set YTDLP_COOKIES_FILE
+ * Prefer YTDLP_COOKIES_B64 on Railway (see yt-cookies.b64).
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
@@ -24,9 +21,23 @@ const browser = (process.argv[2] || 'chrome').toLowerCase()
 const out = path.resolve('yt-cookies.txt')
 const allowed = new Set(['chrome', 'chromium', 'firefox', 'safari', 'edge', 'brave', 'opera'])
 
-/** Domains yt-dlp needs for YouTube auth / consent. */
-const KEEP =
-  /(^|\.)(youtube\.com|youtu\.be|googlevideo\.com|google\.com|googleapis\.com|gstatic\.com|youtube-nocookie\.com)$/i
+/**
+ * Keep YouTube media hosts + root/account Google cookies used for login/consent.
+ * Drop product subdomains (mail, drive, meet, calendar, play, …).
+ */
+function keepHost(domainField) {
+  const host = String(domainField || '')
+    .toLowerCase()
+    .replace(/^\./, '')
+  if (!host) return false
+  if (host === 'youtu.be' || host.endsWith('.youtu.be')) return true
+  if (host === 'youtube.com' || host.endsWith('.youtube.com')) return true
+  if (host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com')) return true
+  if (host === 'googlevideo.com' || host.endsWith('.googlevideo.com')) return true
+  // Auth / consent cookies live on the registrable Google domain or accounts — not on apps.
+  if (host === 'google.com' || host === 'www.google.com' || host === 'accounts.google.com') return true
+  return false
+}
 
 if (!allowed.has(browser)) {
   console.error(`Unknown browser "${browser}". Use: ${[...allowed].join(', ')}`)
@@ -66,29 +77,29 @@ for (const line of lines) {
     continue
   }
   // Netscape: domain \t flag \t path \t secure \t expiry \t name \t value
-  const domain = (line.split('\t')[0] || '').toLowerCase()
-  const host = domain.replace(/^\./, '')
-  if (KEEP.test(domain) || KEEP.test(host) || KEEP.test(`.${host}`)) kept.push(line)
+  const domain = line.includes('\t') ? line.split('\t')[0] : line.trim().split(/\s+/)[0]
+  if (keepHost(domain)) kept.push(line)
 }
 
 if (!kept.some((line) => line && !line.startsWith('#'))) {
-  console.error('No YouTube/Google cookies found. Log into YouTube in that browser and retry.')
+  console.error('No YouTube cookies found. Log into YouTube in that browser and retry.')
   process.exit(1)
 }
 
 const header = kept.some((line) => line.startsWith('# Netscape'))
   ? ''
-  : '# Netscape HTTP Cookie File\n# Filtered for YouTube / Google (PianoSmith)\n'
+  : '# Netscape HTTP Cookie File\n# Filtered for YouTube only (PianoSmith)\n'
 const filtered = `${header}${kept.join('\n').trim()}\n`
 writeFileSync(out, filtered, 'utf8')
 const b64Path = path.resolve('yt-cookies.b64')
 const b64 = Buffer.from(filtered, 'utf8').toString('base64')
 writeFileSync(b64Path, b64, 'utf8')
 
+const cookieLines = kept.filter((line) => line && !line.startsWith('#')).length
 const bytes = Buffer.byteLength(filtered)
 const kb = (bytes / 1024).toFixed(1)
 console.log(`
-Wrote ${out} (${kb} KB, YouTube/Google only)
+Wrote ${out} (${kb} KB, ${cookieLines} cookie lines — youtube/accounts/google root only)
 Wrote ${b64Path} (single-line Base64 for Railway Variables)
 
 Recommended on Railway:
