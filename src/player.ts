@@ -10,19 +10,27 @@ export class Player {
   buffer: AudioBuffer | null = null
   playing = false
   rate = 1
+  muted = false
   onChange: (() => void) | null = null
 
   private ensureGraph() {
     if (this.ctx) return
     const ctx = new AudioContext()
     const master = ctx.createGain()
-    master.gain.value = 1
+    master.gain.value = this.muted ? 0 : 1
     const streamDest = ctx.createMediaStreamDestination()
     master.connect(ctx.destination)
     master.connect(streamDest)
     this.ctx = ctx
     this.master = master
     this.streamDest = streamDest
+  }
+
+  setMuted(muted: boolean) {
+    this.muted = muted
+    this.ensureGraph()
+    if (this.master) this.master.gain.value = muted ? 0 : 1
+    this.onChange?.()
   }
 
   async resume() {

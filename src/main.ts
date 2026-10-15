@@ -49,10 +49,11 @@ const playBtn = el<HTMLButtonElement>('play')
 const settingsOpenBtn = el<HTMLButtonElement>('settings-open')
 const settingsModal = el<HTMLDivElement>('settings-modal')
 const settingsCloseBtn = el<HTMLButtonElement>('settings-close')
-const speedBtn = el<HTMLButtonElement>('speed')
+const speedSelect = el<HTMLSelectElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
+const audioBtn = el<HTMLButtonElement>('audio')
 const midiBtn = el<HTMLButtonElement>('midi')
 const sheetBtn = el<HTMLButtonElement>('sheet')
 const videoBtn = el<HTMLButtonElement>('video')
@@ -82,8 +83,30 @@ const libraryFolderName = el<HTMLInputElement>('library-folder-name')
 const exitModal = el<HTMLDivElement>('exit-modal')
 const exitCancelBtn = el<HTMLButtonElement>('exit-cancel')
 
-const RATES = [1, 0.75, 0.5]
+const RATES = [0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.25, 1.5]
 const SEEK_STEPS = [1, 2, 5, 10]
+
+function speedOptionLabel(rate: number, closed: boolean) {
+  const value = `${rate}×`
+  return closed ? `${t('speed')}: ${value}` : value
+}
+
+function paintSpeedOptions(mode: 'open' | 'closed') {
+  const current = Number(speedSelect.value)
+  for (const option of speedSelect.options) {
+    const rate = Number(option.value)
+    const closed = mode === 'closed' && rate === current
+    option.textContent = speedOptionLabel(rate, closed)
+  }
+}
+
+for (const rate of RATES) {
+  const option = document.createElement('option')
+  option.value = String(rate)
+  speedSelect.append(option)
+}
+speedSelect.value = '1'
+paintSpeedOptions('closed')
 function loadSeekStep() {
   const saved = Number(localStorage.getItem('pianosmith.seekStep'))
   return SEEK_STEPS.includes(saved) ? saved : 2
@@ -118,6 +141,8 @@ handsBtn.setAttribute('aria-pressed', handsOn ? 'true' : 'false')
 const zoomOn = localStorage.getItem('pianosmith.zoom') === '1'
 viz.setZoom(zoomOn)
 zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
+const audioMuted = localStorage.getItem('pianosmith.audio') === '0'
+syncAudioButton(audioMuted)
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -125,10 +150,16 @@ function el<T extends HTMLElement>(id: string): T {
   return node as T
 }
 
+function syncAudioButton(muted: boolean) {
+  audioBtn.setAttribute('aria-pressed', muted ? 'false' : 'true')
+  audioBtn.textContent = t(muted ? 'audioOff' : 'audioOn')
+}
+
 function ensurePlayer() {
   if (!player) {
     player = new Player()
     player.onChange = () => syncUi()
+    player.setMuted(localStorage.getItem('pianosmith.audio') === '0')
   }
   return player
 }
@@ -262,7 +293,9 @@ function syncUi() {
   clock.textContent = `${fmt(time)} / ${fmt(duration)}`
   if (!scrubbing && duration > 0) scrub.value = String(Math.round((time / duration) * 1000))
   playBtn.textContent = player?.playing ? t('pause') : t('play')
-  speedBtn.textContent = `${player?.rate ?? 1}×`
+  const rate = player?.rate ?? 1
+  speedSelect.value = RATES.includes(rate) ? String(rate) : '1'
+  if (document.activeElement !== speedSelect) paintSpeedOptions('closed')
   if (recording) topbar.classList.add('hidden')
   else if (!player?.playing) topbar.classList.remove('hidden')
   const busy = !statusEl.hidden || recording
@@ -276,10 +309,12 @@ function syncUi() {
   midiBtn.disabled = !hasSong || busy
   sheetBtn.disabled = !hasSong || busy
   videoBtn.disabled = !hasSong || busy || !canRecord()
-  speedBtn.disabled = !hasSong || busy
+  speedSelect.disabled = !hasSong || busy
   namesBtn.disabled = !hasSong || busy
   handsBtn.disabled = !hasSong || busy
   zoomBtn.disabled = !hasSong || busy
+  audioBtn.disabled = !hasSong || busy
+  syncAudioButton(player?.muted ?? localStorage.getItem('pianosmith.audio') === '0')
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
   if (player?.playing) poke()
@@ -1005,11 +1040,15 @@ settingsModal.addEventListener('click', (event) => {
   if (target?.dataset.settings === 'close') closeSettingsModal()
 })
 
-speedBtn.addEventListener('click', () => {
-  if (!player) return
-  const index = RATES.indexOf(player.rate)
-  const next = RATES[(index + 1) % RATES.length] ?? 1
-  void player.setRate(next)
+speedSelect.addEventListener('pointerdown', () => paintSpeedOptions('open'))
+speedSelect.addEventListener('focus', () => paintSpeedOptions('open'))
+speedSelect.addEventListener('blur', () => paintSpeedOptions('closed'))
+speedSelect.addEventListener('change', () => {
+  const next = Number(speedSelect.value)
+  if (!RATES.includes(next)) return
+  void ensurePlayer().setRate(next)
+  // Keep short labels while the menu may still be open; blur restores "Speed: …".
+  paintSpeedOptions('open')
   syncUi()
 })
 
@@ -1032,6 +1071,13 @@ zoomBtn.addEventListener('click', () => {
   zoomBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
   viz.setZoom(next)
   localStorage.setItem('pianosmith.zoom', next ? '1' : '0')
+})
+
+audioBtn.addEventListener('click', () => {
+  const muted = audioBtn.getAttribute('aria-pressed') === 'true'
+  localStorage.setItem('pianosmith.audio', muted ? '0' : '1')
+  ensurePlayer().setMuted(muted)
+  syncAudioButton(muted)
 })
 
 midiBtn.addEventListener('click', () => {
