@@ -30,7 +30,7 @@ canvas#stage {
 
 #app { position: fixed; inset: 0; pointer-events: none; }
 
-#topbar, #gate, #status, #center-play, #toast, #rotate, #rec, #library-modal, #settings-modal {
+#topbar, #gate, #status, #center-play, #toast, #rotate, #rec, #library-modal, #settings-modal, #exit-modal {
   pointer-events: auto;
 }
 
@@ -300,6 +300,29 @@ h1 {
   flex: 1;
   font-size: clamp(22px, 3vw, 28px);
   letter-spacing: -0.03em;
+}
+
+.exit-card {
+  width: min(420px, 100%);
+  max-height: none;
+  text-align: center;
+}
+
+.exit-card h2 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 28px);
+  letter-spacing: -0.03em;
+}
+
+.exit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.exit-actions button {
+  min-width: 120px;
 }
 
 #library-close,

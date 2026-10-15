@@ -79,6 +79,8 @@ const libraryEmpty = el<HTMLParagraphElement>('library-empty')
 const libraryNewFolderBtn = el<HTMLButtonElement>('library-new-folder')
 const libraryFolderForm = el<HTMLFormElement>('library-folder-form')
 const libraryFolderName = el<HTMLInputElement>('library-folder-name')
+const exitModal = el<HTMLDivElement>('exit-modal')
+const exitCancelBtn = el<HTMLButtonElement>('exit-cancel')
 
 const RATES = [1, 0.75, 0.5]
 const SEEK_STEPS = [1, 2, 5, 10]
@@ -869,7 +871,24 @@ function closeSettingsModal() {
   poke()
 }
 
+function showExitConfirm() {
+  exitModal.hidden = false
+  poke()
+  queueMicrotask(() => focusTvEl(exitCancelBtn))
+}
+
+function closeExitConfirm() {
+  exitModal.hidden = true
+  poke()
+  queueMicrotask(ensureTvFocus)
+}
+
 function dismissOverlays(event?: KeyboardEvent) {
+  if (!exitModal.hidden) {
+    event?.preventDefault()
+    closeExitConfirm()
+    return true
+  }
   if (!libraryModal.hidden) {
     event?.preventDefault()
     if (!libraryFolderForm.hidden) {
@@ -885,12 +904,36 @@ function dismissOverlays(event?: KeyboardEvent) {
     return true
   }
   if (!gate.hidden && canDismissGate()) {
+    // On Smart TV, Back opens the exit confirm instead of returning to the song.
+    // Escape / non-TV still dismisses the "New" gate via × semantics.
+    if (isSmartTvUi() && event && isBackKey(event)) return false
     event?.preventDefault()
     hideGate()
     return true
   }
   return false
 }
+
+exitModal.addEventListener('pointerdown', (event) => {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  if (target === exitModal || target.classList.contains('modal-backdrop')) {
+    closeExitConfirm()
+  }
+})
+
+exitModal.addEventListener('click', (event) => {
+  const target = (event.target as HTMLElement | null)?.closest('[data-exit]') as HTMLElement | null
+  if (!target || !exitModal.contains(target)) return
+  if (target.dataset.exit === 'close') {
+    closeExitConfirm()
+    return
+  }
+  if (target.dataset.exit === 'confirm') {
+    closeExitConfirm()
+    exitTizenApp()
+  }
+})
 
 window.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return
@@ -1053,6 +1096,60 @@ function isTextEntryTarget(target: EventTarget | null) {
   return type !== 'range'
 }
 
+function isArrowKey(event: KeyboardEvent) {
+  const key = event.key
+  const code = event.keyCode
+  return (
+    key === 'ArrowUp' ||
+    key === 'ArrowDown' ||
+    key === 'ArrowLeft' ||
+    key === 'ArrowRight' ||
+    code === 37 ||
+    code === 38 ||
+    code === 39 ||
+    code === 40
+  )
+}
+
+/** Prefer buttons/summaries so the remote does not start trapped in a text field. */
+function preferredTvFocusable(): HTMLElement | null {
+  const items = tvFocusables()
+  return (
+    items.find((node) => node.tagName === 'BUTTON' || node.tagName === 'SUMMARY' || node.tagName === 'A') ??
+    items[0] ??
+    null
+  )
+}
+
+/** On TV, D-pad / Back leave text inputs so navigation is not trapped. */
+function escapeTvTextEntry(event: KeyboardEvent): boolean {
+  if (!isSmartTvUi() || !isTextEntryTarget(event.target)) return false
+  if (!isArrowKey(event) && !isBackKey(event)) return false
+  event.preventDefault()
+  event.stopPropagation()
+  const active = document.activeElement
+  if (active instanceof HTMLElement) {
+    try {
+      active.blur()
+    } catch {
+      /* ignore */
+    }
+  }
+  if (isBackKey(event)) {
+    focusTvEl(preferredTvFocusable())
+    return true
+  }
+  const key = event.key
+  const code = event.keyCode
+  if (key === 'ArrowUp' || code === 38) moveTvFocus(0, -1)
+  else if (key === 'ArrowDown' || code === 40) moveTvFocus(0, 1)
+  else if (key === 'ArrowLeft' || code === 37) moveTvFocus(-1, 0)
+  else if (key === 'ArrowRight' || code === 39) moveTvFocus(1, 0)
+  // If we could not move (single focusable), land on a preferred control.
+  if (isTextEntryTarget(document.activeElement)) focusTvEl(preferredTvFocusable())
+  return true
+}
+
 function isTizenTv() {
   return typeof (window as Window & { tizen?: unknown }).tizen !== 'undefined'
 }
@@ -1142,12 +1239,13 @@ function isVisibleFocusable(node: HTMLElement) {
 /** Controls the TV remote can land on in the current overlay / top bar. */
 function tvFocusables(): HTMLElement[] {
   const roots: HTMLElement[] = []
-  if (!libraryModal.hidden) roots.push(libraryModal)
+  if (!exitModal.hidden) roots.push(exitModal)
+  else if (!libraryModal.hidden) roots.push(libraryModal)
   else if (!settingsModal.hidden) roots.push(settingsModal)
   else if (!statusEl.hidden) roots.push(statusEl)
   else if (!gate.hidden) roots.push(gate)
   else if (!topbar.hidden) roots.push(topbar)
-  if (!centerPlay.hidden) roots.push(centerPlay)
+  if (!centerPlay.hidden && exitModal.hidden) roots.push(centerPlay)
 
   const nodes = roots.flatMap((root) =>
     [...root.querySelectorAll<HTMLElement>('button, a[href], input, summary, select, [tabindex]:not([tabindex="-1"])')],
@@ -1178,7 +1276,7 @@ function moveTvFocus(dx: number, dy: number) {
   const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
   const current = active && items.includes(active) ? active : null
   if (!current) {
-    focusTvEl(items[0])
+    focusTvEl(preferredTvFocusable() ?? items[0])
     return
   }
 
@@ -1243,12 +1341,16 @@ function ensureTvFocus() {
   if (!isSmartTvUi()) return
   const active = document.activeElement
   if (active instanceof HTMLElement && tvFocusables().includes(active)) return
-  focusTvEl(tvFocusables()[0] ?? document.body)
+  // Prefer buttons over URL fields when establishing focus for the first time.
+  focusTvEl(preferredTvFocusable() ?? document.body)
 }
 
 window.addEventListener('keydown', (event) => {
   poke()
   if (recording) return
+
+  // Leave text fields before other TV handling (D-pad / Back).
+  if (escapeTvTextEntry(event)) return
 
   // Escape is also handled above for overlays; keep a single path for TV Back.
   if (isBackKey(event)) {
@@ -1259,10 +1361,12 @@ window.addEventListener('keydown', (event) => {
       queueMicrotask(ensureTvFocus)
       return
     }
-    // Home screen of the app: leave the widget.
-    if (!gate.hidden && !canDismissGate()) {
+    // Home or "New" gate: on Smart TV ask before leaving the widget.
+    // Return to the song with the gate × button, not with Back.
+    if (!gate.hidden) {
       event.preventDefault()
-      exitTizenApp()
+      if (isSmartTvUi()) showExitConfirm()
+      else exitTizenApp()
     }
     return
   }
@@ -1314,6 +1418,31 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault()
     void ensurePlayer().toggle()
     return
+  }
+
+  // While a top-bar control (not the scrubber) has focus, D-pad Left/Right
+  // moves between buttons. Seeking stays on MediaRewind/FF or when focus is
+  // on the scrubber / nowhere.
+  {
+    const active = document.activeElement
+    const onScrub = active instanceof HTMLInputElement && active.type === 'range'
+    const onBarControl =
+      !onScrub &&
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      tvFocusables().includes(active)
+    if (onBarControl) {
+      if (key === 'ArrowLeft' || code === 37) {
+        event.preventDefault()
+        moveTvFocus(-1, 0)
+        return
+      }
+      if (key === 'ArrowRight' || code === 39) {
+        event.preventDefault()
+        moveTvFocus(1, 0)
+        return
+      }
+    }
   }
 
   if (isPlayPauseKey(event)) {

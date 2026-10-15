@@ -139,6 +139,18 @@
           <p id="library-empty" class="hint" hidden data-i18n="libraryEmpty">This folder is empty.</p>
         </div>
       </div>
+
+      <div id="exit-modal" class="modal" hidden>
+        <div class="modal-backdrop" data-exit="close"></div>
+        <div class="modal-card exit-card" role="dialog" aria-modal="true" aria-labelledby="exit-title" aria-describedby="exit-body">
+          <h2 id="exit-title" data-i18n="exitTitle">Leave PianoSmith?</h2>
+          <p id="exit-body" class="hint" data-i18n="exitBody">Do you want to close the app?</p>
+          <div class="exit-actions">
+            <button id="exit-cancel" type="button" class="ghost" data-exit="close" data-i18n="cancel">Cancel</button>
+            <button id="exit-confirm" type="button" data-exit="confirm" data-i18n="exitConfirm">Exit</button>
+          </div>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
