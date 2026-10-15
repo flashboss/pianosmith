@@ -125,9 +125,41 @@ button[aria-pressed="true"] {
   font-weight: 700;
 }
 
-#scrub {
+.scrub-wrap {
+  position: relative;
   width: 100%;
   margin-top: 8px;
+}
+
+.loop-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.loop-band::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--loop-start, 0%);
+  width: var(--loop-width, 100%);
+  background: rgba(255, 122, 26, 0.45);
+  border-radius: 999px;
+}
+
+#scrub {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin: 0;
   accent-color: var(--orange);
 }
 

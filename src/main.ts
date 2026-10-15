@@ -55,6 +55,11 @@ const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
 const audioBtn = el<HTMLButtonElement>('audio')
 const loopBtn = el<HTMLButtonElement>('loop')
+const loopABtn = el<HTMLButtonElement>('loop-a')
+const loopBBtn = el<HTMLButtonElement>('loop-b')
+const loopClearBtn = el<HTMLButtonElement>('loop-clear')
+const loopRangeEl = el<HTMLParagraphElement>('loop-range')
+const loopBand = el<HTMLDivElement>('loop-band')
 const midiBtn = el<HTMLButtonElement>('midi')
 const sheetBtn = el<HTMLButtonElement>('sheet')
 const videoBtn = el<HTMLButtonElement>('video')
@@ -156,6 +161,43 @@ function el<T extends HTMLElement>(id: string): T {
 function syncAudioButton(muted: boolean) {
   audioBtn.setAttribute('aria-pressed', muted ? 'false' : 'true')
   audioBtn.textContent = t(muted ? 'audioOff' : 'audioOn')
+}
+
+function syncLoopUi() {
+  const p = player
+  const looping = p?.loop ?? localStorage.getItem('pianosmith.loop') === '1'
+  loopBtn.setAttribute('aria-pressed', looping ? 'true' : 'false')
+
+  const duration = p?.duration ?? 0
+  const hasRange = Boolean(p && (p.loopStart != null || p.loopEnd != null) && duration > 0)
+  if (!hasRange || !p) {
+    loopRangeEl.textContent = t('loopRangeFull')
+    loopBand.hidden = true
+  } else {
+    const start = p.effectiveLoopStart()
+    const end = p.effectiveLoopEnd()
+    loopRangeEl.textContent = t('loopRange', { start: fmt(start), end: fmt(end) })
+    const left = (start / duration) * 100
+    const width = Math.max(0, ((end - start) / duration) * 100)
+    loopBand.style.setProperty('--loop-start', `${left}%`)
+    loopBand.style.setProperty('--loop-width', `${width}%`)
+    loopBand.hidden = false
+    loopBand.style.opacity = looping ? '1' : '0.45'
+  }
+}
+
+function enableLoop() {
+  localStorage.setItem('pianosmith.loop', '1')
+  ensurePlayer().setLoop(true)
+}
+
+async function refreshLoopPlayback() {
+  const p = player
+  if (!p?.playing) {
+    syncLoopUi()
+    return
+  }
+  await p.seek(p.currentTime)
 }
 
 function ensurePlayer() {
@@ -319,11 +361,11 @@ function syncUi() {
   zoomBtn.disabled = !hasSong || busy
   audioBtn.disabled = !hasSong || busy
   loopBtn.disabled = !hasSong || busy
+  loopABtn.disabled = !hasSong || busy
+  loopBBtn.disabled = !hasSong || busy
+  loopClearBtn.disabled = !hasSong || busy || !(player?.hasLoopRange() ?? false)
   syncAudioButton(player?.muted ?? localStorage.getItem('pianosmith.audio') === '0')
-  loopBtn.setAttribute(
-    'aria-pressed',
-    (player?.loop ?? localStorage.getItem('pianosmith.loop') === '1') ? 'true' : 'false',
-  )
+  syncLoopUi()
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
   if (player?.playing) poke()
@@ -337,6 +379,7 @@ async function startSong(title: string, nextNotes: NoteEvent[], buffer: AudioBuf
   songTitle = title
   transport.pause()
   transport.buffer = buffer
+  transport.clearLoopRange()
   await transport.setRate(1)
   viz.setTitle(title)
   viz.setNotes(nextNotes)
@@ -1091,9 +1134,30 @@ audioBtn.addEventListener('click', () => {
 
 loopBtn.addEventListener('click', () => {
   const next = loopBtn.getAttribute('aria-pressed') !== 'true'
-  loopBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
   localStorage.setItem('pianosmith.loop', next ? '1' : '0')
   ensurePlayer().setLoop(next)
+  void refreshLoopPlayback()
+})
+
+loopABtn.addEventListener('click', () => {
+  const p = ensurePlayer()
+  if (!p.duration) return
+  p.setLoopStart(p.currentTime)
+  enableLoop()
+  void refreshLoopPlayback()
+})
+
+loopBBtn.addEventListener('click', () => {
+  const p = ensurePlayer()
+  if (!p.duration) return
+  p.setLoopEnd(p.currentTime)
+  enableLoop()
+  void refreshLoopPlayback()
+})
+
+loopClearBtn.addEventListener('click', () => {
+  ensurePlayer().clearLoopRange()
+  void refreshLoopPlayback()
 })
 
 midiBtn.addEventListener('click', () => {

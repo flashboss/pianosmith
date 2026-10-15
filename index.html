@@ -27,7 +27,10 @@
           <button id="settings-open" type="button" data-i18n="options" aria-haspopup="dialog" aria-controls="settings-modal">Options</button>
           <button id="reset" type="button" data-i18n="newSong">New</button>
         </div>
-        <input id="scrub" type="range" min="0" max="1000" value="0" step="1" data-i18n-aria-label="scrub" aria-label="Position" />
+        <div class="scrub-wrap">
+          <div id="loop-band" class="loop-band" hidden></div>
+          <input id="scrub" type="range" min="0" max="1000" value="0" step="1" data-i18n-aria-label="scrub" aria-label="Position" />
+        </div>
       </div>
 
       <div id="gate">
@@ -99,9 +102,19 @@
               <button id="hands" type="button" data-i18n="hands" aria-pressed="true">Hands</button>
               <button id="zoom" type="button" data-i18n="zoom" aria-pressed="false">Zoom</button>
               <button id="audio" type="button" data-i18n="audioOn" aria-pressed="true">Audio on</button>
-              <button id="loop" type="button" data-i18n="loop" aria-pressed="false">Loop</button>
               <select id="speed" data-i18n-aria-label="speed" aria-label="Speed"></select>
             </div>
+          </section>
+          <section class="settings-section" data-i18n-aria-label="practice" aria-label="Practice">
+            <h3 data-i18n="practice">Practice</h3>
+            <p id="loop-hint" class="hint" data-i18n="loopHint">Turn on Loop, then mark A and B at the current time to repeat a passage.</p>
+            <div class="settings-grid">
+              <button id="loop" type="button" data-i18n="loop" aria-pressed="false">Loop</button>
+              <button id="loop-clear" type="button" class="ghost" data-i18n="loopClear">Clear A–B</button>
+              <button id="loop-a" type="button" data-i18n="loopA">A · start</button>
+              <button id="loop-b" type="button" data-i18n="loopB">B · end</button>
+            </div>
+            <p id="loop-range" class="hint">Whole song</p>
           </section>
           <section class="settings-section" data-i18n-aria-label="export" aria-label="Export">
             <h3 data-i18n="export">Export</h3>
