@@ -48,6 +48,7 @@ const seekStepBtn = el<HTMLButtonElement>('seek-step')
 const playBtn = el<HTMLButtonElement>('play')
 const settingsOpenBtn = el<HTMLButtonElement>('settings-open')
 const settingsModal = el<HTMLDivElement>('settings-modal')
+const settingsCard = el<HTMLDivElement>('settings-card')
 const settingsCloseBtn = el<HTMLButtonElement>('settings-close')
 const speedSelect = el<HTMLSelectElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
@@ -80,6 +81,7 @@ const recEl = el<HTMLDivElement>('rec')
 const toastEl = el<HTMLDivElement>('toast')
 const libraryOpenBtn = el<HTMLButtonElement>('library-open')
 const libraryModal = el<HTMLDivElement>('library-modal')
+const libraryCard = el<HTMLDivElement>('library-card')
 const libraryPath = el<HTMLElement>('library-path')
 const libraryBrowser = el<HTMLUListElement>('library-browser')
 const libraryEmpty = el<HTMLParagraphElement>('library-empty')
@@ -87,7 +89,94 @@ const libraryNewFolderBtn = el<HTMLButtonElement>('library-new-folder')
 const libraryFolderForm = el<HTMLFormElement>('library-folder-form')
 const libraryFolderName = el<HTMLInputElement>('library-folder-name')
 const exitModal = el<HTMLDivElement>('exit-modal')
+const exitCard = el<HTMLDivElement>('exit-card')
 const exitCancelBtn = el<HTMLButtonElement>('exit-cancel')
+
+type DraggablePopup = {
+  snap: () => void
+  stopDrag: () => void
+}
+
+function bindDraggablePopup(card: HTMLElement, handle: HTMLElement): DraggablePopup {
+  let offsetX = 0
+  let offsetY = 0
+  let dragging = false
+  let originX = 0
+  let originY = 0
+  let startX = 0
+  let startY = 0
+
+  function apply(x: number, y: number) {
+    card.style.transform = `translate(${x}px, ${y}px)`
+    const rect = card.getBoundingClientRect()
+    const pad = 8
+    let nextX = x
+    let nextY = y
+    if (rect.left < pad) nextX += pad - rect.left
+    if (rect.top < pad) nextY += pad - rect.top
+    if (rect.right > window.innerWidth - pad) nextX += window.innerWidth - pad - rect.right
+    if (rect.bottom > window.innerHeight - pad) nextY += window.innerHeight - pad - rect.bottom
+    if (nextX !== x || nextY !== y) card.style.transform = `translate(${nextX}px, ${nextY}px)`
+    offsetX = nextX
+    offsetY = nextY
+  }
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button != null && event.button !== 0) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('button')) return
+    dragging = true
+    card.classList.add('is-dragging')
+    startX = event.clientX
+    startY = event.clientY
+    originX = offsetX
+    originY = offsetY
+    handle.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  })
+
+  handle.addEventListener('pointermove', (event) => {
+    if (!dragging) return
+    apply(originX + (event.clientX - startX), originY + (event.clientY - startY))
+  })
+
+  const endDrag = (event: PointerEvent) => {
+    if (!dragging) return
+    dragging = false
+    card.classList.remove('is-dragging')
+    try {
+      handle.releasePointerCapture(event.pointerId)
+    } catch {
+      /* ignore */
+    }
+    apply(offsetX, offsetY)
+  }
+
+  handle.addEventListener('pointerup', endDrag)
+  handle.addEventListener('pointercancel', endDrag)
+
+  return {
+    snap: () => apply(offsetX, offsetY),
+    stopDrag: () => {
+      dragging = false
+      card.classList.remove('is-dragging')
+    },
+  }
+}
+
+const settingsDrag = bindDraggablePopup(settingsCard, settingsCard.querySelector('.modal-drag') as HTMLElement)
+const libraryDrag = bindDraggablePopup(libraryCard, libraryCard.querySelector('.modal-drag') as HTMLElement)
+const exitDrag = bindDraggablePopup(exitCard, exitCard.querySelector('.modal-drag') as HTMLElement)
+const gateDrag = bindDraggablePopup(panel, panel.querySelector('.modal-drag') as HTMLElement)
+
+window.addEventListener('resize', () => {
+  if (!settingsModal.hidden) settingsDrag.snap()
+  if (!libraryModal.hidden) libraryDrag.snap()
+  if (!exitModal.hidden) exitDrag.snap()
+  if (!gate.hidden) gateDrag.snap()
+})
+
+gateDrag.snap()
 
 const RATES = [0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.25, 1.5]
 const SEEK_STEPS = [1, 2, 5, 10]
@@ -566,15 +655,18 @@ async function renderLibraryBrowser() {
 async function openLibraryModal() {
   hideFolderForm()
   libraryModal.hidden = false
+  libraryDrag.snap()
   await refreshLibraryButton()
   await renderLibraryBrowser()
   libraryOpenBtn.setAttribute('aria-expanded', 'true')
+  queueMicrotask(ensureTvFocus)
 }
 
 function closeLibraryModal() {
   libraryModal.hidden = true
   hideFolderForm()
   libraryOpenBtn.setAttribute('aria-expanded', 'false')
+  libraryDrag.stopDrag()
 }
 
 async function loadSaved(id: string) {
@@ -846,6 +938,7 @@ function syncGateDismiss() {
 function hideGate() {
   if (!canDismissGate()) return
   gate.hidden = true
+  gateDrag.stopDrag()
   syncGateDismiss()
   syncUi()
   poke()
@@ -857,22 +950,16 @@ function showLibrary() {
   gate.hidden = false
   topbar.classList.remove('hidden')
   syncGateDismiss()
+  gateDrag.snap()
   syncUi()
   void refreshLibraryButton()
+  queueMicrotask(ensureTvFocus)
 }
 
 libraryOpenBtn.setAttribute('aria-expanded', 'false')
 settingsOpenBtn.setAttribute('aria-expanded', 'false')
 libraryOpenBtn.addEventListener('click', () => {
   void openLibraryModal()
-})
-
-libraryModal.addEventListener('pointerdown', (event) => {
-  const target = event.target as HTMLElement | null
-  if (!target) return
-  if (target === libraryModal || target.classList.contains('modal-backdrop')) {
-    closeLibraryModal()
-  }
 })
 
 libraryModal.addEventListener('click', (event) => {
@@ -948,6 +1035,7 @@ function openSettingsModal() {
   if (!notes || recording || !statusEl.hidden) return
   settingsModal.hidden = false
   settingsOpenBtn.setAttribute('aria-expanded', 'true')
+  settingsDrag.snap()
   poke()
   queueMicrotask(ensureTvFocus)
 }
@@ -955,17 +1043,20 @@ function openSettingsModal() {
 function closeSettingsModal() {
   settingsModal.hidden = true
   settingsOpenBtn.setAttribute('aria-expanded', 'false')
+  settingsDrag.stopDrag()
   poke()
 }
 
 function showExitConfirm() {
   exitModal.hidden = false
+  exitDrag.snap()
   poke()
   queueMicrotask(() => focusTvEl(exitCancelBtn))
 }
 
 function closeExitConfirm() {
   exitModal.hidden = true
+  exitDrag.stopDrag()
   poke()
   queueMicrotask(ensureTvFocus)
 }
@@ -1000,14 +1091,6 @@ function dismissOverlays(event?: KeyboardEvent) {
   }
   return false
 }
-
-exitModal.addEventListener('pointerdown', (event) => {
-  const target = event.target as HTMLElement | null
-  if (!target) return
-  if (target === exitModal || target.classList.contains('modal-backdrop')) {
-    closeExitConfirm()
-  }
-})
 
 exitModal.addEventListener('click', (event) => {
   const target = (event.target as HTMLElement | null)?.closest('[data-exit]') as HTMLElement | null
@@ -1079,12 +1162,6 @@ settingsOpenBtn.addEventListener('click', () => {
 
 settingsCloseBtn.addEventListener('click', () => {
   closeSettingsModal()
-})
-
-settingsModal.addEventListener('pointerdown', (event) => {
-  const target = event.target as HTMLElement | null
-  if (!target) return
-  if (target === settingsModal || target.classList.contains('modal-backdrop')) closeSettingsModal()
 })
 
 settingsModal.addEventListener('click', (event) => {

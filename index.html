@@ -36,7 +36,9 @@
       <div id="gate">
         <form id="panel">
           <button id="gate-close" type="button" class="ghost" hidden data-i18n-aria-label="closeSong" aria-label="Back to the song">×</button>
-          <h1>PianoSmith</h1>
+          <div class="modal-drag gate-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
+            <h1>PianoSmith</h1>
+          </div>
           <p class="lead" data-i18n="lead">
             From an audio file or a link, create a tutorial with falling notes and two hands on the piano.
           </p>
@@ -88,10 +90,10 @@
       <div id="toast" hidden></div>
       <div id="rotate" data-i18n="rotate">Rotate the device to landscape</div>
 
-      <div id="settings-modal" class="modal" hidden>
-        <div class="modal-backdrop" data-settings="close"></div>
-        <div class="modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <div class="modal-head">
+      <div id="settings-modal" class="modal modal-float" hidden>
+        <div class="modal-backdrop"></div>
+        <div id="settings-card" class="modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <div class="modal-head modal-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
             <h2 id="settings-title" data-i18n="settingsTitle">Options</h2>
             <button id="settings-close" type="button" class="ghost" data-settings="close" data-i18n-aria-label="close" aria-label="Close">×</button>
           </div>
@@ -127,10 +129,10 @@
         </div>
       </div>
 
-      <div id="library-modal" class="modal" hidden>
-        <div class="modal-backdrop" data-library="close"></div>
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="library-title">
-          <div class="modal-head">
+      <div id="library-modal" class="modal modal-float" hidden>
+        <div class="modal-backdrop"></div>
+        <div id="library-card" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="library-title">
+          <div class="modal-head modal-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
             <h2 id="library-title" data-i18n="libraryTitle">Saved songs</h2>
             <button id="library-close" type="button" class="ghost" data-library="close" data-i18n-aria-label="close" aria-label="Close">×</button>
           </div>
@@ -155,10 +157,12 @@
         </div>
       </div>
 
-      <div id="exit-modal" class="modal" hidden>
-        <div class="modal-backdrop" data-exit="close"></div>
-        <div class="modal-card exit-card" role="dialog" aria-modal="true" aria-labelledby="exit-title" aria-describedby="exit-body">
-          <h2 id="exit-title" data-i18n="exitTitle">Leave PianoSmith?</h2>
+      <div id="exit-modal" class="modal modal-float" hidden>
+        <div class="modal-backdrop"></div>
+        <div id="exit-card" class="modal-card exit-card" role="dialog" aria-modal="true" aria-labelledby="exit-title" aria-describedby="exit-body">
+          <div class="modal-drag exit-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
+            <h2 id="exit-title" data-i18n="exitTitle">Leave PianoSmith?</h2>
+          </div>
           <p id="exit-body" class="hint" data-i18n="exitBody">Do you want to close the app?</p>
           <div class="exit-actions">
             <button id="exit-cancel" type="button" class="ghost" data-exit="close" data-i18n="cancel">Cancel</button>
