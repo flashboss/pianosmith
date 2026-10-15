@@ -54,6 +54,7 @@ const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
 const audioBtn = el<HTMLButtonElement>('audio')
+const loopBtn = el<HTMLButtonElement>('loop')
 const midiBtn = el<HTMLButtonElement>('midi')
 const sheetBtn = el<HTMLButtonElement>('sheet')
 const videoBtn = el<HTMLButtonElement>('video')
@@ -143,6 +144,8 @@ viz.setZoom(zoomOn)
 zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
 const audioMuted = localStorage.getItem('pianosmith.audio') === '0'
 syncAudioButton(audioMuted)
+const loopOn = localStorage.getItem('pianosmith.loop') === '1'
+loopBtn.setAttribute('aria-pressed', loopOn ? 'true' : 'false')
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -160,6 +163,7 @@ function ensurePlayer() {
     player = new Player()
     player.onChange = () => syncUi()
     player.setMuted(localStorage.getItem('pianosmith.audio') === '0')
+    player.setLoop(localStorage.getItem('pianosmith.loop') === '1')
   }
   return player
 }
@@ -314,7 +318,12 @@ function syncUi() {
   handsBtn.disabled = !hasSong || busy
   zoomBtn.disabled = !hasSong || busy
   audioBtn.disabled = !hasSong || busy
+  loopBtn.disabled = !hasSong || busy
   syncAudioButton(player?.muted ?? localStorage.getItem('pianosmith.audio') === '0')
+  loopBtn.setAttribute(
+    'aria-pressed',
+    (player?.loop ?? localStorage.getItem('pianosmith.loop') === '1') ? 'true' : 'false',
+  )
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
   if (player?.playing) poke()
@@ -1078,6 +1087,13 @@ audioBtn.addEventListener('click', () => {
   localStorage.setItem('pianosmith.audio', muted ? '0' : '1')
   ensurePlayer().setMuted(muted)
   syncAudioButton(muted)
+})
+
+loopBtn.addEventListener('click', () => {
+  const next = loopBtn.getAttribute('aria-pressed') !== 'true'
+  loopBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
+  localStorage.setItem('pianosmith.loop', next ? '1' : '0')
+  ensurePlayer().setLoop(next)
 })
 
 midiBtn.addEventListener('click', () => {

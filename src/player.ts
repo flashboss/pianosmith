@@ -11,6 +11,7 @@ export class Player {
   playing = false
   rate = 1
   muted = false
+  loop = false
   onChange: (() => void) | null = null
 
   private ensureGraph() {
@@ -30,6 +31,11 @@ export class Player {
     this.muted = muted
     this.ensureGraph()
     if (this.master) this.master.gain.value = muted ? 0 : 1
+    this.onChange?.()
+  }
+
+  setLoop(loop: boolean) {
+    this.loop = loop
     this.onChange?.()
   }
 
@@ -95,9 +101,15 @@ export class Player {
     source.connect(this.master)
     source.onended = () => {
       if (my !== this.token) return
+      this.source = null
+      if (this.loop) {
+        this.offset = 0
+        this.playing = false
+        void this.play()
+        return
+      }
       this.playing = false
       this.offset = this.duration
-      this.source = null
       this.onChange?.()
     }
     this.source = source
