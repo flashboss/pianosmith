@@ -90,7 +90,7 @@ Build and run from Android Studio. On the phone, file and MIDI import work offli
 
 The APK is an Android **share target**: from YouTube, Spotify, Chrome, etc., use **Share → PianoSmith** to open the shared URL in the app and start transcription (needs a reachable link server for non-file URLs).
 
-You can also install it as a home-screen app from Chrome: the site is a landscape web app.
+The hosted web app is also a **PWA** with [Web Share Target](https://developer.mozilla.org/en-US/docs/Web/Manifest/share_target): install it from Chrome on Android (**Install app** / Add to Home screen), then share a link into PianoSmith. After a deploy, uninstall and reinstall the PWA (or clear site data) so Chrome picks up the updated manifest. Not every app lists PWAs in its share sheet; the APK is more reliable for Spotify/YouTube.
 
 ## Keys
 

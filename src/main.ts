@@ -1818,14 +1818,38 @@ function consumeAndroidShare() {
   return true
 }
 
+/** PWA Web Share Target: Chrome opens ./?title=&text=&url= with the shared payload. */
+function consumeWebShareTarget() {
+  const params = new URLSearchParams(window.location.search)
+  const parts = [params.get('url'), params.get('text'), params.get('title')].filter(
+    (value): value is string => Boolean(value && value.trim()),
+  )
+  if (!parts.length) return false
+  const clean = new URL(window.location.href)
+  clean.search = ''
+  clean.hash = ''
+  history.replaceState(null, '', `${clean.pathname}${clean.search}${clean.hash}` || './')
+  handleSharedText(parts.join('\n'))
+  return true
+}
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || isSmartTvUi()) return
+  void navigator.serviceWorker.register('./sw.js').catch((error) => {
+    console.warn('Service worker registration failed', error)
+  })
+}
+
 window.addEventListener('pianosmithShare', ((event: Event) => {
   const detail = (event as CustomEvent<{ text?: string }>).detail
   if (detail?.text) handleSharedText(detail.text)
 }) as EventListener)
 
+consumeWebShareTarget()
 consumeAndroidShare()
 window.setTimeout(() => consumeAndroidShare(), 400)
 window.setTimeout(() => consumeAndroidShare(), 1200)
+registerServiceWorker()
 
 let last = performance.now()
 function loop(now: number) {
