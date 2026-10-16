@@ -1254,17 +1254,41 @@ serverInput.addEventListener('change', () => {
   void refreshLinkServer()
 })
 
-window.addEventListener('dragover', (event) => {
-  event.preventDefault()
-  drop.classList.add('hot')
-})
-window.addEventListener('dragleave', () => drop.classList.remove('hot'))
-window.addEventListener('drop', (event) => {
-  event.preventDefault()
-  drop.classList.remove('hot')
-  const file = event.dataTransfer?.files?.[0]
-  if (file) void loadFile(file)
-})
+function isPhoneUi() {
+  if (isSmartTvUi()) return false
+  return (
+    window.matchMedia('(pointer: coarse)').matches ||
+    (navigator.maxTouchPoints > 0 && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))
+  )
+}
+
+function syncDropTitle() {
+  const title = drop.querySelector('strong')
+  if (!title) return
+  const key = isPhoneUi() ? 'dropTitlePhone' : 'dropTitle'
+  title.dataset.i18n = key
+  title.textContent = t(key)
+}
+
+if (isSmartTvUi()) {
+  document.documentElement.classList.add('is-tv')
+  drop.hidden = true
+} else if (isPhoneUi()) {
+  document.documentElement.classList.add('is-phone')
+  syncDropTitle()
+} else {
+  window.addEventListener('dragover', (event) => {
+    event.preventDefault()
+    drop.classList.add('hot')
+  })
+  window.addEventListener('dragleave', () => drop.classList.remove('hot'))
+  window.addEventListener('drop', (event) => {
+    event.preventDefault()
+    drop.classList.remove('hot')
+    const file = event.dataTransfer?.files?.[0]
+    if (file) void loadFile(file)
+  })
+}
 
 window.addEventListener('pointermove', poke)
 
@@ -1659,7 +1683,10 @@ window.addEventListener('resize', fit)
  * and must NOT be passed to registerKeyBatch — that invalidates the whole batch.
  */
 function registerRemote() {
-  if (isSmartTvUi()) document.documentElement.classList.add('is-tv')
+  if (isSmartTvUi()) {
+    document.documentElement.classList.add('is-tv')
+    drop.hidden = true
+  }
 
   const tv = (window as Window & {
     tizen?: {

@@ -248,6 +248,16 @@ h1 {
   cursor: pointer;
 }
 
+/* Smart TV: no local file picker / drag-and-drop. */
+.is-tv #drop {
+  display: none !important;
+}
+
+/* Phone: tap to pick a file; drag-and-drop is unused. */
+.is-phone .drop {
+  border-style: solid;
+}
+
 .drop.hot {
   background: rgba(255, 122, 50, 0.18);
 }
