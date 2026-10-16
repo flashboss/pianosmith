@@ -85,7 +85,7 @@ body.recording #topbar {
   opacity: 0.85;
 }
 
-button, .yt input, .server input, .settings-grid select {
+button, .yt input, .server input {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
@@ -453,34 +453,9 @@ h1 {
   gap: 8px;
 }
 
-.settings-grid button,
-.settings-grid select {
+.settings-grid button {
   width: 100%;
   justify-self: stretch;
-}
-
-.settings-grid select {
-  appearance: none;
-  cursor: pointer;
-  font: inherit;
-  text-align: center;
-  background-image: linear-gradient(45deg, transparent 50%, rgba(255, 255, 255, 0.7) 50%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.7) 50%, transparent 50%);
-  background-position: calc(100% - 16px) calc(50% - 2px), calc(100% - 10px) calc(50% - 2px);
-  background-size: 6px 6px, 6px 6px;
-  background-repeat: no-repeat;
-  padding-right: 28px;
-}
-
-.settings-grid select:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.settings-grid select option {
-  color: #111;
-  background: #fff;
-  text-align: left;
 }
 
 .library-path {

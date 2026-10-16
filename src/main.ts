@@ -50,7 +50,7 @@ const settingsOpenBtn = el<HTMLButtonElement>('settings-open')
 const settingsModal = el<HTMLDivElement>('settings-modal')
 const settingsCard = el<HTMLDivElement>('settings-card')
 const settingsCloseBtn = el<HTMLButtonElement>('settings-close')
-const speedSelect = el<HTMLSelectElement>('speed')
+const speedBtn = el<HTMLButtonElement>('speed')
 const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
@@ -178,30 +178,13 @@ window.addEventListener('resize', () => {
 
 gateDrag.snap()
 
-const RATES = [0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.25, 1.5]
+/** 1× is in the middle; tapping cycles through the list. */
+const RATES = [0.25, 0.4, 0.5, 0.6, 0.75, 1, 1.15, 1.25, 1.5, 1.75, 2]
 const SEEK_STEPS = [1, 2, 5, 10]
 
-function speedOptionLabel(rate: number, closed: boolean) {
-  const value = `${rate}×`
-  return closed ? `${t('speed')}: ${value}` : value
+function speedLabel(rate: number) {
+  return `${t('speed')}: ${rate}×`
 }
-
-function paintSpeedOptions(mode: 'open' | 'closed') {
-  const current = Number(speedSelect.value)
-  for (const option of speedSelect.options) {
-    const rate = Number(option.value)
-    const closed = mode === 'closed' && rate === current
-    option.textContent = speedOptionLabel(rate, closed)
-  }
-}
-
-for (const rate of RATES) {
-  const option = document.createElement('option')
-  option.value = String(rate)
-  speedSelect.append(option)
-}
-speedSelect.value = '1'
-paintSpeedOptions('closed')
 function loadSeekStep() {
   const saved = Number(localStorage.getItem('pianosmith.seekStep'))
   return SEEK_STEPS.includes(saved) ? saved : 2
@@ -429,8 +412,7 @@ function syncUi() {
   if (!scrubbing && duration > 0) scrub.value = String(Math.round((time / duration) * 1000))
   playBtn.textContent = player?.playing ? t('pause') : t('play')
   const rate = player?.rate ?? 1
-  speedSelect.value = RATES.includes(rate) ? String(rate) : '1'
-  if (document.activeElement !== speedSelect) paintSpeedOptions('closed')
+  speedBtn.textContent = speedLabel(RATES.includes(rate) ? rate : 1)
   if (recording) topbar.classList.add('hidden')
   else if (!player?.playing) topbar.classList.remove('hidden')
   const busy = !statusEl.hidden || recording
@@ -444,7 +426,7 @@ function syncUi() {
   midiBtn.disabled = !hasSong || busy
   sheetBtn.disabled = !hasSong || busy
   videoBtn.disabled = !hasSong || busy || !canRecord()
-  speedSelect.disabled = !hasSong || busy
+  speedBtn.disabled = !hasSong || busy
   namesBtn.disabled = !hasSong || busy
   handsBtn.disabled = !hasSong || busy
   zoomBtn.disabled = !hasSong || busy
@@ -1169,15 +1151,11 @@ settingsModal.addEventListener('click', (event) => {
   if (target?.dataset.settings === 'close') closeSettingsModal()
 })
 
-speedSelect.addEventListener('pointerdown', () => paintSpeedOptions('open'))
-speedSelect.addEventListener('focus', () => paintSpeedOptions('open'))
-speedSelect.addEventListener('blur', () => paintSpeedOptions('closed'))
-speedSelect.addEventListener('change', () => {
-  const next = Number(speedSelect.value)
-  if (!RATES.includes(next)) return
+speedBtn.addEventListener('click', () => {
+  const current = player?.rate ?? 1
+  const index = RATES.indexOf(current)
+  const next = RATES[(index + 1) % RATES.length] ?? 1
   void ensurePlayer().setRate(next)
-  // Keep short labels while the menu may still be open; blur restores "Speed: …".
-  paintSpeedOptions('open')
   syncUi()
 })
 
