@@ -1775,6 +1775,58 @@ registerRemote()
 void refreshLinkServer()
 void refreshLibraryButton()
 
+/** Pull a playable URL out of Android share text (YouTube/Spotify often add a caption). */
+function extractSharedUrl(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  if (detectLink(trimmed)) return trimmed
+  const spotify = trimmed.match(/spotify:(?:track|album|playlist|episode):[A-Za-z0-9]{22}/)
+  if (spotify?.[0] && detectLink(spotify[0])) return spotify[0]
+  const urls = trimmed.match(/https?:\/\/[^\s<>"')\]]+/gi)
+  if (!urls) return null
+  for (const raw of urls) {
+    const cleaned = raw.replace(/[.,;:!?)]+$/, '')
+    if (detectLink(cleaned)) return cleaned
+  }
+  return null
+}
+
+let lastShareText = ''
+let lastShareAt = 0
+
+function handleSharedText(text: string) {
+  const now = Date.now()
+  if (text === lastShareText && now - lastShareAt < 2500) return
+  lastShareText = text
+  lastShareAt = now
+  const url = extractSharedUrl(text)
+  if (!url) {
+    ytInput.value = text.trim().slice(0, 500)
+    if (gate.hidden) showLibrary()
+    toast(t('pasteLink'))
+    return
+  }
+  ytInput.value = url
+  void loadLink(url)
+}
+
+function consumeAndroidShare() {
+  const pending = (window as Window & { __pianosmithShare?: { text?: string } }).__pianosmithShare
+  if (!pending?.text) return false
+  delete (window as Window & { __pianosmithShare?: { text?: string } }).__pianosmithShare
+  handleSharedText(pending.text)
+  return true
+}
+
+window.addEventListener('pianosmithShare', ((event: Event) => {
+  const detail = (event as CustomEvent<{ text?: string }>).detail
+  if (detail?.text) handleSharedText(detail.text)
+}) as EventListener)
+
+consumeAndroidShare()
+window.setTimeout(() => consumeAndroidShare(), 400)
+window.setTimeout(() => consumeAndroidShare(), 1200)
+
 let last = performance.now()
 function loop(now: number) {
   const dt = (now - last) / 1000

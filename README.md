@@ -86,7 +86,9 @@ npm run android:sync
 npm run android:open
 ```
 
-Build and run from Android Studio. On the phone, file and MIDI import work offline. For a shared link, set the server field to the computer running `npm run dev`.
+Build and run from Android Studio. On the phone, file and MIDI import work offline. For a shared link, set the server field to the computer running `npm run dev` (or your Railway URL).
+
+The APK is an Android **share target**: from YouTube, Spotify, Chrome, etc., use **Share → PianoSmith** to open the shared URL in the app and start transcription (needs a reachable link server for non-file URLs).
 
 You can also install it as a home-screen app from Chrome: the site is a landscape web app.
 
