@@ -168,7 +168,8 @@ button[aria-pressed="true"] {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
+  align-items: safe center;
+  padding: 12px;
   pointer-events: none;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.1) 45%, rgba(0, 0, 0, 0.2));
 }
@@ -186,8 +187,11 @@ button[aria-pressed="true"] {
 #panel, .card {
   position: relative;
   width: min(560px, 100%);
-  max-height: calc(100% - 8px);
-  overflow: auto;
+  max-height: calc(100dvh - 24px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   background: rgba(10, 8, 8, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 22px;
@@ -198,7 +202,7 @@ button[aria-pressed="true"] {
 
 #panel {
   pointer-events: auto;
-  touch-action: none;
+  touch-action: pan-y;
   will-change: transform;
 }
 
@@ -312,7 +316,9 @@ h1 {
   z-index: 40;
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: 12px;
+  /* Let the card own vertical scrolling on short landscape phones. */
+  align-items: safe center;
 }
 
 .modal[hidden] {
@@ -335,8 +341,11 @@ h1 {
   z-index: 1;
   pointer-events: auto;
   width: min(560px, 100%);
-  max-height: min(720px, calc(100% - 8px));
-  overflow: auto;
+  max-height: min(720px, calc(100dvh - 24px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   display: grid;
   gap: 12px;
   align-content: start;
@@ -372,7 +381,8 @@ h1 {
 #library-modal .modal-card,
 #exit-modal .modal-card {
   pointer-events: auto;
-  touch-action: none;
+  /* pan-y: allow scrolling the card; drag uses .modal-drag { touch-action: none }. */
+  touch-action: pan-y;
   will-change: transform;
 }
 
@@ -387,9 +397,29 @@ h1 {
 .modal-drag {
   cursor: grab;
   user-select: none;
+  touch-action: none;
   margin: -8px -6px 0;
   padding: 8px 6px;
   border-radius: 14px;
+}
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .modal,
+  #gate {
+    padding: 6px 10px;
+  }
+
+  .modal-card,
+  #panel,
+  .card {
+    max-height: calc(100dvh - 12px);
+    padding: 14px 14px 12px;
+  }
+
+  .modal-head h2,
+  .gate-drag h1 {
+    font-size: clamp(18px, 4.5vh, 24px);
+  }
 }
 
 .modal-drag:active,
