@@ -684,6 +684,7 @@ h1 {
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .library-move {
@@ -699,12 +700,21 @@ h1 {
 
 .library-remove {
   width: 36px;
+  min-width: 36px;
   min-height: 36px;
   padding: 0;
   border-radius: 999px;
   font-size: 18px;
   line-height: 1;
   color: rgba(255, 255, 255, 0.75);
+  flex-shrink: 0;
+}
+
+.is-tv .library-remove:focus,
+.is-tv .library-remove:focus-visible {
+  border-color: #e10600;
+  color: #fff;
+  outline-color: #e10600;
 }
 
 .library-remove:hover,

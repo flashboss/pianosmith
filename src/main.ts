@@ -1499,6 +1499,23 @@ function moveTvFocus(dx: number, dy: number) {
     return
   }
 
+  // Library rows: main → move combo → remove. Prefer DOM order so the × after
+  // the folder select stays reachable with Left/Right on the TV remote.
+  if (dx !== 0) {
+    const row = current.closest('.library-item')
+    if (row) {
+      const rowItems = items.filter((node) => row.contains(node))
+      const rowIndex = rowItems.indexOf(current)
+      if (rowIndex >= 0) {
+        const sibling = rowItems[rowIndex + dx]
+        if (sibling) {
+          focusTvEl(sibling)
+          return
+        }
+      }
+    }
+  }
+
   const cur = current.getBoundingClientRect()
   const cx = cur.left + cur.width / 2
   const cy = cur.top + cur.height / 2
@@ -1563,6 +1580,31 @@ function ensureTvFocus() {
   // Prefer buttons over URL fields when establishing focus for the first time.
   focusTvEl(preferredTvFocusable() ?? document.body)
 }
+
+// Capture: native <select> would otherwise eat Left/Right before focus can reach the ×.
+window.addEventListener(
+  'keydown',
+  (event) => {
+    if (!isSmartTvUi() || recording) return
+    const target = event.target
+    if (!(target instanceof HTMLSelectElement)) return
+    if (!tvFocusables().includes(target)) return
+    const key = event.key
+    const code = event.keyCode
+    if (key === 'ArrowLeft' || code === 37) {
+      event.preventDefault()
+      event.stopPropagation()
+      moveTvFocus(-1, 0)
+      return
+    }
+    if (key === 'ArrowRight' || code === 39) {
+      event.preventDefault()
+      event.stopPropagation()
+      moveTvFocus(1, 0)
+    }
+  },
+  true,
+)
 
 window.addEventListener('keydown', (event) => {
   poke()
