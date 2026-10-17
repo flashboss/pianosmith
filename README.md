@@ -34,7 +34,7 @@ That image:
 - runs `npm ci`, **`npm run build`**, and `npm start` so the container serves both the UI and `/api/link`
 - listens on `0.0.0.0` and the platform `PORT`
 
-Point the host’s build at the Dockerfile (on Railway: Dockerfile builder). After deploy, open the public URL and leave the in-app **Server** field empty when the UI and API are on the same origin. Check `GET /api/health` — it should report `"ytdlp": true`.
+Point the host’s build at the Dockerfile (on Railway: Dockerfile builder). After deploy, open the public URL: the app uses that same origin for `/api/link`. Check `GET /api/health` — it should report `"ytdlp": true`.
 
 YouTube often blocks datacenter IPs. There is no fully automatic bypass inside the container alone; use one of these project-supported mitigations:
 
@@ -72,7 +72,7 @@ The TV build is a web widget staged in `tizen-app/` by `npm run build`.
 TV_IP=192.168.0.165 ./scripts/tizen-install.sh
 ```
 
-That requires the Tizen Studio CLI (`tizen`, `sdb`) and a TV certificate profile. Local audio and MIDI work inside the widget. For a shared link, open the computer’s address in the TV browser, or set **Server** inside the app to `http://<computer>:5173`.
+That requires the Tizen Studio CLI (`tizen`, `sdb`) and a TV certificate profile. Local audio and MIDI work inside the widget. For shared links, open the hosted app URL (or your computer’s address) in the TV browser so the UI and `/api/link` share the same origin.
 
 The package id is `PianoSmith` and the app id is `PianoSmith.player`.
 
@@ -86,9 +86,9 @@ npm run android:sync
 npm run android:open
 ```
 
-Build and run from Android Studio. On the phone, file and MIDI import work offline. For a shared link, set the server field to the computer running `npm run dev` (or your Railway URL).
+Build and run from Android Studio. On the phone, file and MIDI import work offline. For shared links, open the hosted app (e.g. Railway) or a machine running `npm start` so the UI and `/api/link` are on the same origin.
 
-The APK is an Android **share target**: from YouTube, Spotify, Chrome, etc., use **Share → PianoSmith** to open the shared URL in the app and start transcription (needs a reachable link server for non-file URLs).
+The APK is an Android **share target**: from YouTube, Spotify, Chrome, etc., use **Share → PianoSmith** to open the shared URL in the app and start transcription (needs a reachable link API on that same origin).
 
 The hosted web app is also a **PWA** with [Web Share Target](https://developer.mozilla.org/en-US/docs/Web/Manifest/share_target): install it from Chrome on Android (**Install app** / Add to Home screen), then share a link into PianoSmith. After a deploy, uninstall and reinstall the PWA (or clear site data) so Chrome picks up the updated manifest. Not every app lists PWAs in its share sheet; the APK is more reliable for Spotify/YouTube.
 

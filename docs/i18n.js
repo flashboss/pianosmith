@@ -14,7 +14,7 @@
         'Drop an MP3, WAV, or MIDI file, paste a music link, or open the built-in demo. Transcription runs on your device with Spotify Basic Pitch; shared links use a small local helper with yt-dlp.',
       platformsTitle: 'Web, TV, and phone.',
       platformsBody:
-        'Run it in the browser, install the Samsung Tizen widget, or build the Android app. Local audio and MIDI work offline; point the Server field at your computer when you need a web link.',
+        'Run it in the browser, install the Samsung Tizen widget, or build the Android app. Local audio and MIDI work offline; open the hosted app (or your computer’s address) when you need a web link.',
       licenseLine: 'MIT License · © 2026 Luca Stancapiano',
       source: 'Source',
       license: 'License',
@@ -32,7 +32,7 @@
         'Trascina un MP3, WAV o MIDI, incolla un link musicale o apri la demo integrata. La trascrizione gira sul dispositivo con Spotify Basic Pitch; i link condivisi usano un piccolo helper locale con yt-dlp.',
       platformsTitle: 'Web, TV e telefono.',
       platformsBody:
-        'Usalo nel browser, installa il widget Samsung Tizen o compila l’app Android. Audio e MIDI locali funzionano offline; indica nel campo Server il computer quando ti serve un link web.',
+        'Usalo nel browser, installa il widget Samsung Tizen o compila l’app Android. Audio e MIDI locali funzionano offline; apri l’app ospitata (o l’indirizzo del computer) quando ti serve un link web.',
       licenseLine: 'Licenza MIT · © 2026 Luca Stancapiano',
       source: 'Sorgente',
       license: 'Licenza',
@@ -50,7 +50,7 @@
         'Déposez un MP3, WAV ou MIDI, collez un lien musical ou ouvrez la démo intégrée. La transcription tourne sur votre appareil avec Spotify Basic Pitch ; les liens partagés passent par un petit helper local avec yt-dlp.',
       platformsTitle: 'Web, TV et téléphone.',
       platformsBody:
-        'Lancez-le dans le navigateur, installez le widget Samsung Tizen ou compilez l’app Android. Audio et MIDI locaux fonctionnent hors ligne ; indiquez l’ordinateur dans le champ Server pour un lien web.',
+        'Lancez-le dans le navigateur, installez le widget Samsung Tizen ou compilez l’app Android. Audio et MIDI locaux fonctionnent hors ligne ; ouvrez l’app hébergée (ou l’adresse de l’ordinateur) pour un lien web.',
       licenseLine: 'Licence MIT · © 2026 Luca Stancapiano',
       source: 'Code source',
       license: 'Licence',
@@ -68,7 +68,7 @@
         'Suelta un MP3, WAV o MIDI, pega un enlace musical o abre la demo integrada. La transcripción corre en tu dispositivo con Spotify Basic Pitch; los enlaces compartidos usan un pequeño helper local con yt-dlp.',
       platformsTitle: 'Web, TV y teléfono.',
       platformsBody:
-        'Úsalo en el navegador, instala el widget Samsung Tizen o compila la app Android. El audio y MIDI locales funcionan sin conexión; indica el ordenador en el campo Server cuando necesites un enlace web.',
+        'Úsalo en el navegador, instala el widget Samsung Tizen o compila la app Android. El audio y MIDI locales funcionan sin conexión; abre la app alojada (o la dirección del ordenador) cuando necesites un enlace web.',
       licenseLine: 'Licencia MIT · © 2026 Luca Stancapiano',
       source: 'Código',
       license: 'Licencia',
@@ -86,7 +86,7 @@
         'Lege eine MP3-, WAV- oder MIDI-Datei ab, füge einen Musiklink ein oder öffne die eingebaute Demo. Die Transkription läuft auf dem Gerät mit Spotify Basic Pitch; geteilte Links nutzen einen kleinen lokalen Helper mit yt-dlp.',
       platformsTitle: 'Web, TV und Telefon.',
       platformsBody:
-        'Im Browser starten, das Samsung-Tizen-Widget installieren oder die Android-App bauen. Lokales Audio und MIDI funktionieren offline; im Server-Feld den Computer angeben, wenn ein Weblink nötig ist.',
+        'Im Browser starten, das Samsung-Tizen-Widget installieren oder die Android-App bauen. Lokales Audio und MIDI funktionieren offline; für Weblinks die gehostete App (oder die Adresse des Computers) öffnen.',
       licenseLine: 'MIT-Lizenz · © 2026 Luca Stancapiano',
       source: 'Quellcode',
       license: 'Lizenz',
@@ -103,7 +103,7 @@
         '拖入 MP3、WAV 或 MIDI，粘贴音乐链接，或打开内置演示。转录在本地用 Spotify Basic Pitch 完成；共享链接通过带 yt-dlp 的本地小助手处理。',
       platformsTitle: '网页、电视与手机。',
       platformsBody:
-        '在浏览器中运行、安装三星 Tizen 组件，或构建 Android 应用。本地音频与 MIDI 可离线使用；需要网页链接时，在 Server 字段指向你的电脑。',
+        '在浏览器中运行、安装三星 Tizen 组件，或构建 Android 应用。本地音频与 MIDI 可离线使用；需要网页链接时打开托管应用（或电脑地址）。',
       licenseLine: 'MIT 许可证 · © 2026 Luca Stancapiano',
       source: '源码',
       license: '许可证',
@@ -120,7 +120,7 @@
         'MP3・WAV・MIDI をドロップするか、音楽リンクを貼るか、内蔵デモを開きます。書き起こしは Spotify Basic Pitch で端末上で実行され、共有リンクは yt-dlp 付きの小さなローカルヘルパーを使います。',
       platformsTitle: 'Web・TV・スマホ。',
       platformsBody:
-        'ブラウザで動かす、Samsung Tizen ウィジェットを入れる、または Android アプリをビルド。ローカルの音声と MIDI はオフラインで使え、Web リンクが必要なときは Server 欄に PC を指定します。',
+        'ブラウザで動かす、Samsung Tizen ウィジェットを入れる、または Android アプリをビルド。ローカルの音声と MIDI はオフラインで使え、Web リンクが必要なときはホストされたアプリ（または PC のアドレス）を開きます。',
       licenseLine: 'MIT ライセンス · © 2026 Luca Stancapiano',
       source: 'ソース',
       license: 'ライセンス',

@@ -1,6 +1,6 @@
 import './style.css'
 import { initI18n, t } from './i18n'
-import { detectLink, fetchLink, linkServerAvailable, linkSourceName, serverBase, serverFieldValue } from './api'
+import { detectLink, fetchLink, linkServerAvailable, linkSourceName, serverBase } from './api'
 import { demoNotes } from './demo'
 import { Visualizer } from './engine'
 import {
@@ -71,7 +71,6 @@ const ytInput = el<HTMLInputElement>('yt')
 const panel = el<HTMLFormElement>('panel')
 const hint = el<HTMLParagraphElement>('yt-hint')
 const demoBtn = el<HTMLButtonElement>('demo')
-const serverInput = el<HTMLInputElement>('server')
 const statusEl = el<HTMLDivElement>('status')
 const statusText = el<HTMLParagraphElement>('status-text')
 const statusFill = el<HTMLDivElement>('status-fill')
@@ -203,13 +202,12 @@ let hideTimer = 0
 let currentLibraryFolder = ROOT_FOLDER_ID
 let libraryMoveOptions: Array<{ id: string; label: string }> = []
 
-{
-  const resolved = serverFieldValue()
-  serverInput.value = resolved
-  serverInput.placeholder = resolved
-  const saved = (localStorage.getItem('pianosmith.server') || '').trim().replace(/\/$/, '')
-  if (saved !== resolved) localStorage.setItem('pianosmith.server', resolved)
+try {
+  localStorage.removeItem('pianosmith.server')
+} catch {
+  /* ignore */
 }
+
 const namesOn = localStorage.getItem('pianosmith.names') === '1'
 viz.setShowNames(namesOn)
 namesBtn.setAttribute('aria-pressed', namesOn ? 'true' : 'false')
@@ -1247,13 +1245,6 @@ scrub.addEventListener('change', () => {
   scrubToFraction(Number(scrub.value) / 1000)
 })
 
-serverInput.addEventListener('change', () => {
-  const next = serverInput.value.trim().replace(/\/$/, '') || serverFieldValue()
-  serverInput.value = next
-  localStorage.setItem('pianosmith.server', next)
-  void refreshLinkServer()
-})
-
 function isPhoneUi() {
   if (isSmartTvUi()) return false
   return (
@@ -1750,13 +1741,12 @@ function registerRemote() {
 }
 
 async function refreshLinkServer() {
-  const base = serverBase()
   const ok = await linkServerAvailable()
   if (ok) {
-    hint.textContent = base ? t('linksVia', { base }) : t('linksReady')
+    hint.textContent = t('linksVia', { base: serverBase() })
     return
   }
-  hint.textContent = base ? t('serverUnreachable') : t('linksNeedServer')
+  hint.textContent = t('serverUnreachable')
 }
 
 function showDetectedLink() {

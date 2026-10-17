@@ -77,31 +77,9 @@ export function linkSourceName(input: string): string {
   return host
 }
 
-export function defaultServerOrigin(): string {
-  return window.location.origin.replace(/\/$/, '')
-}
-
-function isLoopbackHost(value: string): boolean {
-  try {
-    const host = new URL(value).hostname
-    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
-  } catch {
-    return /^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])\b/i.test(value.trim())
-  }
-}
-
-/** API base: saved Server field, else the URL used to open the app. */
+/** API base: always the origin used to open the app (same host as the UI). */
 export function serverBase(): string {
-  const saved = (localStorage.getItem('pianosmith.server') || '').trim().replace(/\/$/, '')
-  if (!saved) return defaultServerOrigin()
-  // Ignore a stale localhost saved while using a remote deploy (Railway, LAN IP, …).
-  if (isLoopbackHost(saved) && !isLoopbackHost(defaultServerOrigin())) return defaultServerOrigin()
-  return saved
-}
-
-/** Value to show in the Server field (saved or current page origin). */
-export function serverFieldValue(): string {
-  return serverBase()
+  return window.location.origin.replace(/\/$/, '')
 }
 
 export async function fetchLink(input: string, signal?: AbortSignal): Promise<{ blob: Blob; title: string }> {
