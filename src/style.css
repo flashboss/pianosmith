@@ -561,6 +561,25 @@ h1 {
   justify-self: stretch;
 }
 
+.settings-keys {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.settings-keys #keys {
+  width: 100%;
+}
+
+.settings-keys #keys-fewer,
+.settings-keys #keys-more {
+  min-width: 48px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
 .library-path {
   display: flex;
   flex-wrap: wrap;

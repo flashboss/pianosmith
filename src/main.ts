@@ -11,7 +11,7 @@ import {
   type SearchVideo,
 } from './api'
 import { demoNotes } from './demo'
-import { Visualizer } from './engine'
+import { KEYBOARD_MAX_KEYS, KEYBOARD_MIN_KEYS, Visualizer } from './engine'
 import {
   ROOT_FOLDER_ID,
   countLibrarySongs,
@@ -60,6 +60,9 @@ const settingsModal = el<HTMLDivElement>('settings-modal')
 const settingsCard = el<HTMLDivElement>('settings-card')
 const settingsCloseBtn = el<HTMLButtonElement>('settings-close')
 const speedBtn = el<HTMLButtonElement>('speed')
+const keysBtn = el<HTMLButtonElement>('keys')
+const keysFewerBtn = el<HTMLButtonElement>('keys-fewer')
+const keysMoreBtn = el<HTMLButtonElement>('keys-more')
 const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
@@ -233,6 +236,9 @@ handsBtn.setAttribute('aria-pressed', handsOn ? 'true' : 'false')
 const zoomOn = localStorage.getItem('pianosmith.zoom') === '1'
 viz.setZoom(zoomOn)
 zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
+const savedKeys = Number(localStorage.getItem('pianosmith.keys'))
+viz.setKeyCount(Number.isFinite(savedKeys) ? savedKeys : KEYBOARD_MAX_KEYS)
+syncKeysUi()
 const audioMuted = localStorage.getItem('pianosmith.audio') === '0'
 syncAudioButton(audioMuted)
 const loopOn = localStorage.getItem('pianosmith.loop') === '1'
@@ -247,6 +253,23 @@ function el<T extends HTMLElement>(id: string): T {
 function syncAudioButton(muted: boolean) {
   audioBtn.setAttribute('aria-pressed', muted ? 'false' : 'true')
   audioBtn.textContent = t(muted ? 'audioOff' : 'audioOn')
+}
+
+function syncKeysUi() {
+  const count = viz.keyCount()
+  keysBtn.textContent = t('keys', { n: count })
+  keysFewerBtn.disabled = count <= KEYBOARD_MIN_KEYS
+  keysMoreBtn.disabled = count >= KEYBOARD_MAX_KEYS
+}
+
+function setKeyCount(count: number) {
+  viz.setKeyCount(count)
+  localStorage.setItem('pianosmith.keys', String(viz.keyCount()))
+  syncKeysUi()
+}
+
+function stepKeyCount(delta: number) {
+  setKeyCount(viz.keyCount() + delta)
 }
 
 function syncLoopUi() {
@@ -1193,6 +1216,10 @@ zoomBtn.addEventListener('click', () => {
   viz.setZoom(next)
   localStorage.setItem('pianosmith.zoom', next ? '1' : '0')
 })
+
+keysFewerBtn.addEventListener('click', () => stepKeyCount(-1))
+keysMoreBtn.addEventListener('click', () => stepKeyCount(1))
+keysBtn.addEventListener('click', () => stepKeyCount(1))
 
 audioBtn.addEventListener('click', () => {
   const muted = audioBtn.getAttribute('aria-pressed') === 'true'

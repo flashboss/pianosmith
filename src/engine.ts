@@ -46,9 +46,17 @@ interface Layout {
 }
 
 const LOOKAHEAD = 3.15
-/** Fixed keyboard: A0 (La) through C8 (Do), scaled to fill the full width. */
-const FIXED_CAM_LO = whiteIndex(21)
-const FIXED_CAM_HI = whiteIndex(108) + 1
+/** Full piano: A0 (21) … C8 (108). Visible range keeps the left edge and trims from the right. */
+export const KEYBOARD_MIN_MIDI = 21
+export const KEYBOARD_MAX_MIDI = 108
+export const KEYBOARD_MIN_KEYS = 25
+export const KEYBOARD_MAX_KEYS = KEYBOARD_MAX_MIDI - KEYBOARD_MIN_MIDI + 1
+
+function cameraBounds(loMidi: number, hiMidi: number): { lo: number; hi: number } {
+  const lo = whiteIndex(loMidi)
+  const hi = isBlack(hiMidi) ? whiteIndex(hiMidi + 1) + 1 : whiteIndex(hiMidi) + 1
+  return { lo, hi: Math.max(lo + 2, hi) }
+}
 
 /** White-key offsets for a relaxed open hand (9 notes inclusive). */
 const OPEN_FINGER_OFFSETS = [-4, -2, 0, 2, 4] as const
@@ -415,11 +423,13 @@ export class Visualizer {
   private showNames = false
   private showHands = true
   private zoom = false
+  private keyLo = KEYBOARD_MIN_MIDI
+  private keyHi = KEYBOARD_MAX_MIDI
   private w = 1280
   private h = 720
   private keyboardTop = 500
-  private camLo = FIXED_CAM_LO
-  private camHi = FIXED_CAM_HI
+  private camLo = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MAX_MIDI).lo
+  private camHi = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MAX_MIDI).hi
   private camReady = false
   private prev = -1
   private sparks: Spark[] = []
@@ -442,13 +452,29 @@ export class Visualizer {
     this.showHands = show
   }
 
+  /** Chromatic key count; left edge stays on A0, right edge moves. */
+  setKeyCount(count: number) {
+    const n = Math.max(KEYBOARD_MIN_KEYS, Math.min(KEYBOARD_MAX_KEYS, Math.round(count)))
+    this.keyLo = KEYBOARD_MIN_MIDI
+    this.keyHi = KEYBOARD_MIN_MIDI + n - 1
+    this.camReady = false
+    if (!this.zoom) this.applyFixedCamera()
+  }
+
+  keyCount(): number {
+    return this.keyHi - this.keyLo + 1
+  }
+
   setZoom(enabled: boolean) {
     this.zoom = enabled
     this.camReady = false
-    if (!enabled) {
-      this.camLo = FIXED_CAM_LO
-      this.camHi = FIXED_CAM_HI
-    }
+    if (!enabled) this.applyFixedCamera()
+  }
+
+  private applyFixedCamera() {
+    const bounds = cameraBounds(this.keyLo, this.keyHi)
+    this.camLo = bounds.lo
+    this.camHi = bounds.hi
   }
 
   setTitle(title: string) {
@@ -523,8 +549,7 @@ export class Visualizer {
 
   private frameCamera(time: number, dt: number) {
     if (!this.zoom) {
-      this.camLo = FIXED_CAM_LO
-      this.camHi = FIXED_CAM_HI
+      this.applyFixedCamera()
       this.camReady = true
       return
     }
@@ -555,8 +580,9 @@ export class Visualizer {
         hi = mid + 7.5
       }
     }
-    lo = Math.max(-0.5, lo)
-    hi = Math.min(52.5, Math.max(lo + 12, hi))
+    const bounds = cameraBounds(this.keyLo, this.keyHi)
+    lo = Math.max(bounds.lo - 0.5, lo)
+    hi = Math.min(bounds.hi + 0.5, Math.max(lo + 12, hi))
     if (!this.camReady) {
       this.camLo = lo
       this.camHi = hi
@@ -842,7 +868,7 @@ export class Visualizer {
     ctx.fillStyle = '#140705'
     ctx.fillRect(0, top - 4, this.w, whiteH + 8)
 
-    for (let midi = 21; midi <= 108; midi++) {
+    for (let midi = this.keyLo; midi <= this.keyHi; midi++) {
       if (isBlack(midi)) continue
       const index = whiteIndex(midi)
       const x = (index - this.camLo) * layout.whiteW
@@ -873,7 +899,7 @@ export class Visualizer {
       if (note) this.paintKey(left, y, keyW, height * 0.72, note)
     }
 
-    for (let midi = 21; midi <= 108; midi++) {
+    for (let midi = this.keyLo; midi <= this.keyHi; midi++) {
       if (!isBlack(midi)) continue
       const width = layout.whiteW * 0.56
       const x = layout.centerX(midi) - width / 2
