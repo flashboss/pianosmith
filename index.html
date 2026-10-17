@@ -67,6 +67,16 @@
           <p id="yt-hint" class="hint"></p>
           <button id="demo" type="button" class="ghost wide" data-i18n="watchDemo">Watch the demo</button>
           <button id="library-open" type="button" class="ghost wide" data-i18n="savedSongs">Saved songs</button>
+          <details>
+            <summary data-i18n="tvPhoneServer">TV, phone, and server</summary>
+            <label class="server">
+              <span data-i18n="server">Server</span>
+              <input id="server" type="url" placeholder="https://example.com" autocomplete="off" />
+            </label>
+            <p class="hint" data-i18n="serverHint">
+              Audio and MIDI files work on this device. Server defaults to this page’s address; change it only if the TV or phone must use another host.
+            </p>
+          </details>
         </form>
       </div>
 

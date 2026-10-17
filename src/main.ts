@@ -7,6 +7,7 @@ import {
   linkSourceName,
   searchVideos,
   serverBase,
+  serverFieldValue,
   type SearchVideo,
 } from './api'
 import { demoNotes } from './demo'
@@ -80,6 +81,7 @@ const ytResults = el<HTMLUListElement>('yt-results')
 const panel = el<HTMLFormElement>('panel')
 const hint = el<HTMLParagraphElement>('yt-hint')
 const demoBtn = el<HTMLButtonElement>('demo')
+const serverInput = el<HTMLInputElement>('server')
 let searchTimer = 0
 let searchAbort: AbortController | null = null
 let searchSeq = 0
@@ -214,10 +216,12 @@ let hideTimer = 0
 let currentLibraryFolder = ROOT_FOLDER_ID
 let libraryMoveOptions: Array<{ id: string; label: string }> = []
 
-try {
-  localStorage.removeItem('pianosmith.server')
-} catch {
-  /* ignore */
+{
+  const resolved = serverFieldValue()
+  serverInput.value = resolved
+  serverInput.placeholder = resolved
+  const saved = (localStorage.getItem('pianosmith.server') || '').trim().replace(/\/$/, '')
+  if (saved !== resolved) localStorage.setItem('pianosmith.server', resolved)
 }
 
 const namesOn = localStorage.getItem('pianosmith.names') === '1'
@@ -1257,6 +1261,13 @@ scrub.addEventListener('change', () => {
   scrubToFraction(Number(scrub.value) / 1000)
 })
 
+serverInput.addEventListener('change', () => {
+  const next = serverInput.value.trim().replace(/\/$/, '') || serverFieldValue()
+  serverInput.value = next
+  localStorage.setItem('pianosmith.server', next)
+  void refreshLinkServer()
+})
+
 function isPhoneUi() {
   if (isSmartTvUi()) return false
   return (
@@ -1753,12 +1764,13 @@ function registerRemote() {
 }
 
 async function refreshLinkServer() {
+  const base = serverBase()
   const ok = await linkServerAvailable()
   if (ok) {
-    hint.textContent = t('linksVia', { base: serverBase() })
+    hint.textContent = base ? t('linksVia', { base }) : t('linksReady')
     return
   }
-  hint.textContent = t('serverUnreachable')
+  hint.textContent = base ? t('serverUnreachable') : t('linksNeedServer')
 }
 
 function clearVideoSearch() {

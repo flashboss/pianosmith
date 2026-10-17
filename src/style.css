@@ -85,7 +85,7 @@ body.recording #topbar {
   opacity: 0.85;
 }
 
-button, .yt input {
+button, .yt input, .server input {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
@@ -266,7 +266,7 @@ h1 {
   background: rgba(255, 122, 50, 0.18);
 }
 
-.drop span, .hint {
+.drop span, .hint, summary {
   color: rgba(255, 255, 255, 0.62);
 }
 
@@ -278,13 +278,13 @@ h1 {
   pointer-events: none;
 }
 
-.yt {
+.yt, .server {
   display: flex;
   gap: 8px;
   margin-top: 12px;
 }
 
-.yt input {
+.yt input, .server input {
   flex: 1;
   border-radius: 12px;
   min-width: 0;
@@ -717,6 +717,16 @@ h1 {
   margin: 0;
   text-align: center;
   padding: 18px 8px 8px;
+}
+
+details { margin-top: 14px; }
+
+summary { cursor: pointer; }
+
+.server {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 10px;
 }
 
 .hint { font-size: 13px; line-height: 1.4; }
