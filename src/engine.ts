@@ -51,10 +51,21 @@ export const KEYBOARD_MIN_MIDI = 21
 export const KEYBOARD_MAX_MIDI = 108
 export const KEYBOARD_MIN_KEYS = 25
 export const KEYBOARD_MAX_KEYS = KEYBOARD_MAX_MIDI - KEYBOARD_MIN_MIDI + 1
+export const KEYBOARD_DEFAULT_KEYS = 85
 
 function cameraBounds(loMidi: number, hiMidi: number): { lo: number; hi: number } {
   const lo = whiteIndex(loMidi)
-  const hi = isBlack(hiMidi) ? whiteIndex(hiMidi + 1) + 1 : whiteIndex(hiMidi) + 1
+  let hi: number
+  if (isBlack(hiMidi)) {
+    // Black sits between two whites; end the camera at the black's right edge so we
+    // do not open an empty white slot (reads as an extra solid-black key).
+    const left = whiteIndex(hiMidi - 1)
+    const right = whiteIndex(hiMidi + 1)
+    const blackHalf = 0.28 // half of black key width (0.56 × whiteW)
+    hi = (left + right) / 2 + 0.5 + blackHalf
+  } else {
+    hi = whiteIndex(hiMidi) + 1
+  }
   return { lo, hi: Math.max(lo + 2, hi) }
 }
 
@@ -424,12 +435,12 @@ export class Visualizer {
   private showHands = true
   private zoom = false
   private keyLo = KEYBOARD_MIN_MIDI
-  private keyHi = KEYBOARD_MAX_MIDI
+  private keyHi = KEYBOARD_MIN_MIDI + KEYBOARD_DEFAULT_KEYS - 1
   private w = 1280
   private h = 720
   private keyboardTop = 500
-  private camLo = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MAX_MIDI).lo
-  private camHi = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MAX_MIDI).hi
+  private camLo = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MIN_MIDI + KEYBOARD_DEFAULT_KEYS - 1).lo
+  private camHi = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MIN_MIDI + KEYBOARD_DEFAULT_KEYS - 1).hi
   private camReady = false
   private prev = -1
   private sparks: Spark[] = []
@@ -902,14 +913,21 @@ export class Visualizer {
     for (let midi = this.keyLo; midi <= this.keyHi; midi++) {
       if (!isBlack(midi)) continue
       const width = layout.whiteW * 0.56
-      const x = layout.centerX(midi) - width / 2
-      if (x > this.w || x + width < 0) continue
+      let x = layout.centerX(midi) - width / 2
+      let keyW = width
+      if (x + keyW < 0 || x > this.w) continue
+      if (x < 0) {
+        keyW += x
+        x = 0
+      }
+      if (x + keyW > this.w) keyW = this.w - x
+      if (keyW <= 0) continue
       const pressed = active.has(midi)
       const depress = pressed ? 5 : 0
       const y = top + depress
       const height = blackH - depress
-      traceRoundRect(ctx, x, y, width, height, Math.min(5, width / 3))
-      const gradient = ctx.createLinearGradient(x, y, x + width, y)
+      traceRoundRect(ctx, x, y, keyW, height, Math.min(5, keyW / 3))
+      const gradient = ctx.createLinearGradient(x, y, x + keyW, y)
       gradient.addColorStop(0, '#3a3a3a')
       gradient.addColorStop(0.18, '#161616')
       gradient.addColorStop(0.55, '#2c2c2c')
@@ -917,9 +935,9 @@ export class Visualizer {
       ctx.fillStyle = gradient
       ctx.fill()
       ctx.fillStyle = 'rgba(255,255,255,0.16)'
-      ctx.fillRect(x + 2, y + 3, Math.max(1, width * 0.28), height * 0.42)
+      ctx.fillRect(x + 2, y + 3, Math.max(1, keyW * 0.28), height * 0.42)
       const note = active.get(midi)
-      if (note) this.paintKey(x, y, width, height * 0.8, note)
+      if (note) this.paintKey(x, y, keyW, height * 0.8, note)
     }
   }
 

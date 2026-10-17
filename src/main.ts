@@ -11,7 +11,7 @@ import {
   type SearchVideo,
 } from './api'
 import { demoNotes } from './demo'
-import { KEYBOARD_MAX_KEYS, KEYBOARD_MIN_KEYS, Visualizer } from './engine'
+import { KEYBOARD_DEFAULT_KEYS, KEYBOARD_MAX_KEYS, KEYBOARD_MIN_KEYS, Visualizer } from './engine'
 import {
   ROOT_FOLDER_ID,
   countLibrarySongs,
@@ -237,7 +237,7 @@ const zoomOn = localStorage.getItem('pianosmith.zoom') === '1'
 viz.setZoom(zoomOn)
 zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
 const savedKeys = Number(localStorage.getItem('pianosmith.keys'))
-viz.setKeyCount(Number.isFinite(savedKeys) ? savedKeys : KEYBOARD_MAX_KEYS)
+viz.setKeyCount(Number.isFinite(savedKeys) && savedKeys > 0 ? savedKeys : KEYBOARD_DEFAULT_KEYS)
 syncKeysUi()
 const audioMuted = localStorage.getItem('pianosmith.audio') === '0'
 syncAudioButton(audioMuted)
