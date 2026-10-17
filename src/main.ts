@@ -1,6 +1,14 @@
 import './style.css'
 import { initI18n, t } from './i18n'
-import { detectLink, fetchLink, linkServerAvailable, linkSourceName, serverBase } from './api'
+import {
+  detectLink,
+  fetchLink,
+  linkServerAvailable,
+  linkSourceName,
+  searchVideos,
+  serverBase,
+  type SearchVideo,
+} from './api'
 import { demoNotes } from './demo'
 import { Visualizer } from './engine'
 import {
@@ -68,9 +76,13 @@ const resetBtn = el<HTMLButtonElement>('reset')
 const fileInput = el<HTMLInputElement>('file')
 const drop = el<HTMLLabelElement>('drop')
 const ytInput = el<HTMLInputElement>('yt')
+const ytResults = el<HTMLUListElement>('yt-results')
 const panel = el<HTMLFormElement>('panel')
 const hint = el<HTMLParagraphElement>('yt-hint')
 const demoBtn = el<HTMLButtonElement>('demo')
+let searchTimer = 0
+let searchAbort: AbortController | null = null
+let searchSeq = 0
 const statusEl = el<HTMLDivElement>('status')
 const statusText = el<HTMLParagraphElement>('status-text')
 const statusFill = el<HTMLDivElement>('status-fill')
@@ -1749,14 +1761,106 @@ async function refreshLinkServer() {
   hint.textContent = t('serverUnreachable')
 }
 
+function clearVideoSearch() {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer)
+    searchTimer = 0
+  }
+  searchAbort?.abort()
+  searchAbort = null
+  ytResults.replaceChildren()
+  ytResults.hidden = true
+}
+
+function renderVideoResults(results: SearchVideo[]) {
+  ytResults.replaceChildren()
+  for (const video of results) {
+    const item = document.createElement('li')
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'yt-result'
+    button.dataset.url = video.url
+    button.setAttribute('role', 'option')
+
+    const img = document.createElement('img')
+    img.className = 'yt-thumb'
+    img.src = video.thumbnail
+    img.alt = ''
+    img.loading = 'lazy'
+    img.referrerPolicy = 'no-referrer'
+
+    const body = document.createElement('span')
+    body.className = 'yt-result-body'
+    const title = document.createElement('span')
+    title.className = 'yt-result-title'
+    title.textContent = video.title
+    const meta = document.createElement('span')
+    meta.className = 'yt-result-meta'
+    const parts = [video.channel, formatDuration(video.duration)].filter(Boolean)
+    meta.textContent = parts.join(' · ')
+    body.append(title, meta)
+
+    button.append(img, body)
+    item.append(button)
+    ytResults.append(item)
+  }
+  ytResults.hidden = results.length === 0
+}
+
 function showDetectedLink() {
-  const name = linkSourceName(ytInput.value)
+  const value = ytInput.value.trim()
+  const name = linkSourceName(value)
   const label = document.getElementById('link-kind')
-  if (!label) return
-  label.textContent = name ? t('recognized', { name }) : ''
+  if (label) label.textContent = name ? t('recognized', { name }) : ''
+
+  if (!value || detectLink(value)) {
+    clearVideoSearch()
+    return
+  }
+
+  if (searchTimer) window.clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => {
+    void runVideoSearch(value)
+  }, 420)
+}
+
+async function runVideoSearch(query: string) {
+  const q = query.trim()
+  if (q.length < 2 || detectLink(q)) {
+    clearVideoSearch()
+    return
+  }
+  const seq = ++searchSeq
+  searchAbort?.abort()
+  searchAbort = new AbortController()
+  const label = document.getElementById('link-kind')
+  if (label) label.textContent = t('searching')
+  try {
+    const results = await searchVideos(q, searchAbort.signal)
+    if (seq !== searchSeq || ytInput.value.trim() !== q) return
+    if (label) label.textContent = results.length ? '' : t('searchNoResults')
+    renderVideoResults(results)
+    if (isSmartTvUi() && results.length) queueMicrotask(ensureTvFocus)
+  } catch (error) {
+    if ((error as { name?: string }).name === 'AbortError') return
+    if (seq !== searchSeq) return
+    clearVideoSearch()
+    if (label) label.textContent = error instanceof Error ? error.message : t('searchFailed')
+  }
 }
 
 ytInput.addEventListener('input', showDetectedLink)
+
+ytResults.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement | null)?.closest('button.yt-result') as HTMLButtonElement | null
+  if (!button || !ytResults.contains(button)) return
+  const url = button.dataset.url || ''
+  if (!url) return
+  ytInput.value = url
+  clearVideoSearch()
+  showDetectedLink()
+  void loadLink(url)
+})
 
 fit()
 syncSeekControls()

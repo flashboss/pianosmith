@@ -50,17 +50,20 @@
           <div class="yt">
             <input
               id="yt"
-              type="text"
-              inputmode="url"
+              type="search"
+              inputmode="search"
               data-i18n-placeholder="songLink"
               data-i18n-aria-label="songLink"
-              placeholder="Song link"
+              placeholder="Song link or search"
               autocomplete="off"
-              aria-label="Song link"
+              aria-label="Song link or search"
+              aria-autocomplete="list"
+              aria-controls="yt-results"
             />
             <button id="yt-go" type="submit" data-i18n="create">Create</button>
           </div>
           <p id="link-kind" class="hint"></p>
+          <ul id="yt-results" class="yt-results" hidden role="listbox" data-i18n-aria-label="searchResults" aria-label="Search results"></ul>
           <p id="yt-hint" class="hint"></p>
           <button id="demo" type="button" class="ghost wide" data-i18n="watchDemo">Watch the demo</button>
           <button id="library-open" type="button" class="ghost wide" data-i18n="savedSongs">Saved songs</button>

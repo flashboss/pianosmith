@@ -124,3 +124,30 @@ export async function linkServerAvailable(): Promise<boolean> {
     return false
   }
 }
+
+export type SearchVideo = {
+  id: string
+  title: string
+  channel: string
+  duration: number
+  url: string
+  thumbnail: string
+}
+
+export async function searchVideos(query: string, signal?: AbortSignal): Promise<SearchVideo[]> {
+  const q = query.trim()
+  if (q.length < 2) return []
+  const response = await fetch(`${serverBase()}/api/search?q=${encodeURIComponent(q)}`, { signal })
+  if (!response.ok) {
+    let message = t('searchFailed')
+    try {
+      const body = (await response.json()) as { message?: string }
+      if (body.message) message = body.message
+    } catch {
+      /* keep default */
+    }
+    throw new Error(message)
+  }
+  const body = (await response.json()) as { results?: SearchVideo[] }
+  return Array.isArray(body.results) ? body.results : []
+}

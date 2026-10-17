@@ -196,26 +196,51 @@ function songLabel(song) {
   return song.artist ? `${song.artist} — ${song.title}` : song.title
 }
 
-async function searchYouTube(query, targetSeconds) {
+async function listYouTubeSearch(query, limit = 8) {
+  const capped = Math.min(Math.max(Number(limit) || 8, 1), 12)
   const { stdout } = await run(
     'yt-dlp',
-    ['--flat-playlist', '--no-warnings', '--print', '%(id)s\t%(duration)s\t%(title)s', `ytsearch8:${query}`],
+    [
+      '--flat-playlist',
+      '--no-warnings',
+      '--print',
+      '%(id)s\t%(duration)s\t%(uploader)s\t%(title)s',
+      `ytsearch${capped}:${query}`,
+    ],
     root,
+    45000,
   )
-  const rows = stdout
+  return stdout
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [id, duration, ...rest] = line.split('\t')
-      return { id, duration: Number(duration), title: rest.join('\t') }
+      const [id, duration, uploader, ...rest] = line.split('\t')
+      return {
+        id,
+        duration: Number(duration),
+        channel: uploader || '',
+        title: rest.join('\t'),
+      }
     })
-    .filter((row) => ID.test(row.id))
+    .filter((row) => ID.test(row.id) && row.title)
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      channel: row.channel,
+      duration: Number.isFinite(row.duration) && row.duration > 0 ? row.duration : 0,
+      url: `https://www.youtube.com/watch?v=${row.id}`,
+      thumbnail: `https://i.ytimg.com/vi/${row.id}/mqdefault.jpg`,
+    }))
+}
+
+async function searchYouTube(query, targetSeconds) {
+  const rows = await listYouTubeSearch(query, 8)
   if (rows.length === 0) throw new Error('Nessun audio trovato per questo brano')
   let best = rows[0]
   let bestScore = Infinity
   for (const row of rows) {
-    if (!Number.isFinite(row.duration) || row.duration <= 0) continue
+    if (!row.duration) continue
     const score = Math.abs(row.duration - targetSeconds)
     if (score < bestScore) {
       bestScore = score
@@ -239,15 +264,15 @@ function ffmpegDir() {
   return null
 }
 
-function run(cmd, args, cwd) {
+function run(cmd, args, cwd, timeoutMs = 180000) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, env: commandEnv() })
     let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      reject(new Error('Download scaduto'))
-    }, 180000)
+      reject(new Error(timeoutMs < 60000 ? 'Ricerca scaduta' : 'Download scaduto'))
+    }, timeoutMs)
     child.stdout.on('data', (chunk) => {
       stdout += chunk
     })
@@ -675,6 +700,25 @@ const server = http.createServer(async (req, res) => {
           proxy: Boolean((process.env.YTDLP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').trim()),
         },
       })
+      return
+    }
+    if (url.pathname === '/api/search' && req.method === 'GET') {
+      const query = cleanQuery(url.searchParams.get('q') || '')
+      if (query.length < 2) {
+        sendJson(res, 400, { message: 'Scrivi almeno 2 caratteri' })
+        return
+      }
+      if (!(await ytdlpAvailable())) {
+        sendJson(res, 503, { message: 'yt-dlp non disponibile' })
+        return
+      }
+      try {
+        const results = await listYouTubeSearch(query, 8)
+        sendJson(res, 200, { results })
+      } catch (error) {
+        console.error(error)
+        sendJson(res, 502, { message: friendly(error) })
+      }
       return
     }
     if ((url.pathname === '/api/link' || url.pathname === '/api/youtube') && req.method === 'POST') {
