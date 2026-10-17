@@ -1526,10 +1526,10 @@ function moveTvFocus(dx: number, dy: number) {
     return
   }
 
-  // Library rows: main → move combo → remove. Prefer DOM order so the × after
-  // the folder select stays reachable with Left/Right on the TV remote.
+  // Horizontal groups (library actions, keys −/count/+): prefer DOM order so
+  // small side controls stay reachable with Left/Right on the TV remote.
   if (dx !== 0) {
-    const row = current.closest('.library-item')
+    const row = current.closest('.library-item, .settings-keys')
     if (row) {
       const rowItems = items.filter((node) => row.contains(node))
       const rowIndex = rowItems.indexOf(current)

@@ -575,9 +575,18 @@ h1 {
 
 .settings-keys #keys-fewer,
 .settings-keys #keys-more {
-  min-width: 48px;
+  min-width: 56px;
+  min-height: 48px;
   font-size: 22px;
   font-weight: 700;
+}
+
+.is-tv .settings-keys #keys-fewer:focus,
+.is-tv .settings-keys #keys-more:focus,
+.is-tv .settings-keys #keys:focus {
+  outline: 3px solid var(--orange);
+  outline-offset: 2px;
+  border-color: var(--orange);
 }
 
 .library-path {
