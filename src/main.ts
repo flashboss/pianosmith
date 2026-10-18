@@ -704,6 +704,17 @@ async function renderLibraryBrowser() {
   }
 }
 
+/** After opening a folder, keep the TV remote on the first child item (not the chrome). */
+function focusLibraryBrowserContents() {
+  if (!isSmartTvUi() || libraryModal.hidden) return
+  const first = libraryBrowser.querySelector<HTMLElement>('.library-main')
+  if (first) {
+    focusTvEl(first)
+    return
+  }
+  focusTvEl(libraryNewFolderBtn)
+}
+
 async function openLibraryModal() {
   hideFolderForm()
   libraryModal.hidden = false
@@ -1026,13 +1037,17 @@ libraryModal.addEventListener('click', (event) => {
   if (action === 'goto') {
     currentLibraryFolder = id
     hideFolderForm()
-    void renderLibraryBrowser()
+    void renderLibraryBrowser().then(() => {
+      queueMicrotask(focusLibraryBrowserContents)
+    })
     return
   }
   if (action === 'enter' && id) {
     currentLibraryFolder = id
     hideFolderForm()
-    void renderLibraryBrowser()
+    void renderLibraryBrowser().then(() => {
+      queueMicrotask(focusLibraryBrowserContents)
+    })
     return
   }
   if (action === 'open' && id) {
