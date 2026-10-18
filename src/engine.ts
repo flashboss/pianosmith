@@ -53,16 +53,24 @@ export const KEYBOARD_MIN_KEYS = 25
 export const KEYBOARD_MAX_KEYS = KEYBOARD_MAX_MIDI - KEYBOARD_MIN_MIDI + 1
 export const KEYBOARD_DEFAULT_KEYS = 85
 
+const BLACK_KEY_HALF = 0.28 // half of black key width (0.56 × whiteW)
+
 function cameraBounds(loMidi: number, hiMidi: number): { lo: number; hi: number } {
-  const lo = whiteIndex(loMidi)
+  let lo: number
+  if (isBlack(loMidi)) {
+    // Start at the black's left edge; do not leave an empty white slot before it.
+    const left = whiteIndex(loMidi - 1)
+    const right = whiteIndex(loMidi + 1)
+    lo = (left + right) / 2 + 0.5 - BLACK_KEY_HALF
+  } else {
+    lo = whiteIndex(loMidi)
+  }
   let hi: number
   if (isBlack(hiMidi)) {
-    // Black sits between two whites; end the camera at the black's right edge so we
-    // do not open an empty white slot (reads as an extra solid-black key).
+    // End at the black's right edge; do not open an empty white slot after it.
     const left = whiteIndex(hiMidi - 1)
     const right = whiteIndex(hiMidi + 1)
-    const blackHalf = 0.28 // half of black key width (0.56 × whiteW)
-    hi = (left + right) / 2 + 0.5 + blackHalf
+    hi = (left + right) / 2 + 0.5 + BLACK_KEY_HALF
   } else {
     hi = whiteIndex(hiMidi) + 1
   }
@@ -463,17 +471,69 @@ export class Visualizer {
     this.showHands = show
   }
 
-  /** Chromatic key count; left edge stays on A0, right edge moves. */
-  setKeyCount(count: number) {
-    const n = Math.max(KEYBOARD_MIN_KEYS, Math.min(KEYBOARD_MAX_KEYS, Math.round(count)))
-    this.keyLo = KEYBOARD_MIN_MIDI
-    this.keyHi = KEYBOARD_MIN_MIDI + n - 1
+  /** Set visible MIDI range (inclusive). Trims/grows from either edge. */
+  setKeyRange(loMidi: number, hiMidi: number) {
+    let lo = Math.round(loMidi)
+    let hi = Math.round(hiMidi)
+    if (hi < lo) [lo, hi] = [hi, lo]
+    lo = Math.max(KEYBOARD_MIN_MIDI, Math.min(KEYBOARD_MAX_MIDI, lo))
+    hi = Math.max(KEYBOARD_MIN_MIDI, Math.min(KEYBOARD_MAX_MIDI, hi))
+    if (hi - lo + 1 < KEYBOARD_MIN_KEYS) {
+      // Prefer keeping the requested high end when the span is too small.
+      lo = Math.max(KEYBOARD_MIN_MIDI, hi - KEYBOARD_MIN_KEYS + 1)
+      hi = Math.min(KEYBOARD_MAX_MIDI, lo + KEYBOARD_MIN_KEYS - 1)
+    }
+    this.keyLo = lo
+    this.keyHi = hi
     this.camReady = false
     if (!this.zoom) this.applyFixedCamera()
   }
 
+  /** Default span: A0 plus DEFAULT_KEYS − 1 toward the treble. */
+  setKeyCount(count: number) {
+    const n = Math.max(KEYBOARD_MIN_KEYS, Math.min(KEYBOARD_MAX_KEYS, Math.round(count)))
+    this.setKeyRange(KEYBOARD_MIN_MIDI, KEYBOARD_MIN_MIDI + n - 1)
+  }
+
+  /**
+   * Grow (+) or shrink (−) one key on the left (bass) or right (treble) edge.
+   * Returns false if the edge cannot move further.
+   */
+  adjustKeyEdge(side: 'left' | 'right', delta: number): boolean {
+    const step = Math.sign(delta)
+    if (!step) return false
+    let lo = this.keyLo
+    let hi = this.keyHi
+    if (side === 'left') {
+      lo -= step // + adds a lower key; − removes the lowest
+    } else {
+      hi += step // + adds a higher key; − removes the highest
+    }
+    if (lo < KEYBOARD_MIN_MIDI || hi > KEYBOARD_MAX_MIDI) return false
+    if (hi - lo + 1 < KEYBOARD_MIN_KEYS || hi - lo + 1 > KEYBOARD_MAX_KEYS) return false
+    if (lo === this.keyLo && hi === this.keyHi) return false
+    this.setKeyRange(lo, hi)
+    return true
+  }
+
   keyCount(): number {
     return this.keyHi - this.keyLo + 1
+  }
+
+  keyRange(): { lo: number; hi: number } {
+    return { lo: this.keyLo, hi: this.keyHi }
+  }
+
+  canAdjustKeyEdge(side: 'left' | 'right', delta: number): boolean {
+    const step = Math.sign(delta)
+    if (!step) return false
+    let lo = this.keyLo
+    let hi = this.keyHi
+    if (side === 'left') lo -= step
+    else hi += step
+    if (lo < KEYBOARD_MIN_MIDI || hi > KEYBOARD_MAX_MIDI) return false
+    if (hi - lo + 1 < KEYBOARD_MIN_KEYS || hi - lo + 1 > KEYBOARD_MAX_KEYS) return false
+    return lo !== this.keyLo || hi !== this.keyHi
   }
 
   setZoom(enabled: boolean) {

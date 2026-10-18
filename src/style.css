@@ -561,29 +561,33 @@ h1 {
   justify-self: stretch;
 }
 
+.settings-keys-count {
+  margin: 10px 0 0;
+  font-weight: 700;
+  font-size: 15px;
+}
+
 .settings-keys {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   margin-top: 8px;
 }
 
-.settings-keys #keys {
-  width: 100%;
+.settings-keys-label {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
 }
 
-.settings-keys #keys-fewer,
-.settings-keys #keys-more {
+.settings-keys button {
   min-width: 56px;
   min-height: 48px;
   font-size: 22px;
   font-weight: 700;
 }
 
-.is-tv .settings-keys #keys-fewer:focus,
-.is-tv .settings-keys #keys-more:focus,
-.is-tv .settings-keys #keys:focus {
+.is-tv .settings-keys button:focus {
   outline: 3px solid var(--orange);
   outline-offset: 2px;
   border-color: var(--orange);
