@@ -17,6 +17,7 @@
         'Run it in the browser, install the Samsung Tizen widget, or build the Android app. Local audio and MIDI work offline; open the hosted app (or your computer’s address) when you need a web link.',
       newsTitle: 'News',
       newsIntro: 'Product updates as they ship — tap an item for the full story.',
+      newsHome: '← Home',
       newsBack: '← News',
       newsMidiTitle: 'MIDI keyboard & wait-for-keys practice',
       newsMidiLede:
@@ -70,6 +71,7 @@
         'Usalo nel browser, installa il widget Samsung Tizen o compila l’app Android. Audio e MIDI locali funzionano offline; apri l’app ospitata (o l’indirizzo del computer) quando ti serve un link web.',
       newsTitle: 'News',
       newsIntro: 'Aggiornamenti del prodotto man mano che arrivano — tocca una voce per il dettaglio.',
+      newsHome: '← Home',
       newsBack: '← News',
       newsMidiTitle: 'Tastiera MIDI e modalità aspetta i tasti',
       newsMidiLede:
@@ -123,6 +125,7 @@
         'Lancez-le dans le navigateur, installez le widget Samsung Tizen ou compilez l’app Android. Audio et MIDI locaux fonctionnent hors ligne ; ouvrez l’app hébergée (ou l’adresse de l’ordinateur) pour un lien web.',
       newsTitle: 'Actualités',
       newsIntro: 'Mises à jour du produit au fil du temps — touchez un élément pour le détail.',
+      newsHome: '← Accueil',
       newsBack: '← Actualités',
       newsMidiTitle: 'Clavier MIDI et mode attendre les touches',
       newsMidiLede:
@@ -147,6 +150,7 @@
         'Úsalo en el navegador, instala el widget Samsung Tizen o compila la app Android. El audio y MIDI locales funcionan sin conexión; abre la app alojada (o la dirección del ordenador) cuando necesites un enlace web.',
       newsTitle: 'Novedades',
       newsIntro: 'Actualizaciones del producto a medida que llegan — toca un elemento para el detalle.',
+      newsHome: '← Inicio',
       newsBack: '← Novedades',
       newsMidiTitle: 'Teclado MIDI y modo esperar teclas',
       newsMidiLede:
@@ -171,6 +175,7 @@
         'Im Browser starten, das Samsung-Tizen-Widget installieren oder die Android-App bauen. Lokales Audio und MIDI funktionieren offline; für Weblinks die gehostete App (oder die Adresse des Computers) öffnen.',
       newsTitle: 'Neuigkeiten',
       newsIntro: 'Produkt-Updates nach und nach — tippe auf einen Eintrag für die Details.',
+      newsHome: '← Start',
       newsBack: '← Neuigkeiten',
       newsMidiTitle: 'MIDI-Tastatur und Warten-auf-Tasten',
       newsMidiLede:
@@ -194,6 +199,7 @@
         '在浏览器中运行、安装三星 Tizen 组件，或构建 Android 应用。本地音频与 MIDI 可离线使用；需要网页链接时打开托管应用（或电脑地址）。',
       newsTitle: '动态',
       newsIntro: '产品更新会陆续发布——点开条目查看详情。',
+      newsHome: '← 首页',
       newsBack: '← 动态',
       newsMidiTitle: 'MIDI 键盘与等待按键练习',
       newsMidiLede:
@@ -217,6 +223,7 @@
         'ブラウザで動かす、Samsung Tizen ウィジェットを入れる、または Android アプリをビルド。ローカルの音声と MIDI はオフラインで使え、Web リンクが必要なときはホストされたアプリ（または PC のアドレス）を開きます。',
       newsTitle: 'ニュース',
       newsIntro: '製品の更新を随時掲載 — 項目を開くと詳細が見られます。',
+      newsHome: '← ホーム',
       newsBack: '← ニュース',
       newsMidiTitle: 'MIDI キーボードとキー待ち練習',
       newsMidiLede:
