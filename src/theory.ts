@@ -148,6 +148,14 @@ export function canFingerNotes(side: Hand, midis: number[]): boolean {
   return bestFingerAssignment(side, midis, null) != null
 }
 
+/** Optional biases for jump landings and phrase endings. */
+export type FingerAssignOptions = {
+  /** Hand relocated with a long leap. */
+  longJump?: boolean
+  /** No soon-following notes for this hand after the current ones. */
+  phraseEnd?: boolean
+}
+
 /**
  * Pick an order-preserving finger assignment with minimal travel from `previous`.
  * Returns midis for all 5 fingers (pressed notes locked; others null) or null if impossible.
@@ -156,6 +164,7 @@ export function bestFingerAssignment(
   side: Hand,
   midis: number[],
   previous: number[] | null,
+  options: FingerAssignOptions = {},
 ): Array<number | null> | null {
   const notes = [...new Set(midis)].sort((a, b) => a - b)
   if (notes.length === 0) return [null, null, null, null, null]
@@ -164,6 +173,8 @@ export function bestFingerAssignment(
   const order = keyboardFingerOrder(side)
   let best: Array<number | null> | null = null
   let bestCost = Infinity
+  // Outer pitch of the block: pinky side (high for right, low for left).
+  const outerMidi = side === 'right' ? notes[notes.length - 1] : notes[0]
 
   const walk = (noteIdx: number, orderIdx: number, assign: Array<number | null>) => {
     if (noteIdx === notes.length) {
@@ -179,6 +190,13 @@ export function bestFingerAssignment(
       // Prefer using more central / natural blocks slightly.
       const used = assign.filter((midi) => midi != null).length
       cost += (5 - used) * 0.01
+      // After a long leap with nothing following, land the outer note on the pinky
+      // (not the ring) — typical for a phrase-ending jump.
+      if (options.longJump && options.phraseEnd) {
+        if (assign[4] === outerMidi) cost -= notes.length === 1 ? 6.5 : 3.2
+        else if (assign[3] === outerMidi && assign[4] == null) cost += 5.5
+        else if (notes.length === 1 && assign[4] == null) cost += 3.5
+      }
       if (cost < bestCost) {
         bestCost = cost
         best = assign.slice()

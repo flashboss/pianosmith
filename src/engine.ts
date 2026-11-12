@@ -46,6 +46,8 @@ interface Layout {
 }
 
 const LOOKAHEAD = 3.15
+/** Hands may cross briefly; after this, notes are re-split left/low · right/high. */
+const MAX_HAND_CROSS_SEC = 0.28
 /** Full piano: A0 (21) … C8 (108). Visible range keeps the left edge and trims from the right. */
 export const KEYBOARD_MIN_MIDI = 21
 export const KEYBOARD_MAX_MIDI = 108
@@ -181,9 +183,12 @@ function enforceHandOpen(midis: number[], locked: Set<number> = new Set()): numb
 /**
  * Order fingertips with at least 1 white key between neighbors, then clamp to 9 notes.
  * Never allows the hand to open wider than HAND_OPEN — fingers do not stretch.
+ * Locked fingertips keep their exact MIDI (including sharps); only idle fingers
+ * are snapped back onto white keys.
  */
 function spaceFingers(side: 'left' | 'right', midis: number[], locked: Set<number>): number[] {
-  const whites = midis.map((midi) => whiteIndex(midi))
+  const source = midis.map((midi) => clampMidi(midi))
+  const whites = source.map((midi) => whiteIndex(midi))
   const minGap = 1
 
   if (side === 'right') {
@@ -202,10 +207,11 @@ function spaceFingers(side: 'left' | 'right', midis: number[], locked: Set<numbe
     }
   }
 
-  return enforceHandOpen(
-    whites.map((w) => midiAtWhiteIndex(w)),
-    locked,
-  )
+  const remapped = whites.map((w, finger) => (locked.has(finger) ? source[finger] : midiAtWhiteIndex(w)))
+  const result = enforceHandOpen(remapped, locked)
+  // enforceHandOpen must never rewrite a pressed sharp into a neighbor white key.
+  for (const finger of locked) result[finger] = source[finger]
+  return result
 }
 
 /**
@@ -284,6 +290,17 @@ function withinHandReach(prev: number[], notes: number[]): boolean {
   return needLo >= reachLo - 0.01 && needHi <= reachHi + 0.01 && needHi - needLo <= HAND_OPEN
 }
 
+/** White-key travel from the previous hand center to the new notes — “long” leaps. */
+function jumpDistance(prev: number[], notes: number[]): number {
+  if (notes.length === 0) return 0
+  const prevWhites = prev.map((midi) => whiteIndex(midi))
+  const center = (Math.min(...prevWhites) + Math.max(...prevWhites)) / 2
+  const needLo = whiteIndex(Math.min(...notes))
+  const needHi = whiteIndex(Math.max(...notes))
+  const needCenter = (needLo + needHi) / 2
+  return Math.abs(needCenter - center)
+}
+
 /**
  * Assign active notes inside a hard 9-note hand with finger interval rules.
  * If notes are too far from the current pose, the whole hand jumps — fingers never stretch.
@@ -293,6 +310,7 @@ function fingerMidis(
   active: number[],
   home: number,
   previous: number[] | null,
+  phraseEnd = false,
 ): number[] {
   const unique = [...new Set(active)].sort((a, b) => a - b)
   const covering =
@@ -307,9 +325,11 @@ function fingerMidis(
 
   // Jump the whole hand whenever notes sit outside the current 9-note reach.
   const jump = !withinHandReach(prev, covering)
+  const longJump = jump && jumpDistance(prev, covering) >= 5
   const base = jump ? openHandMidis(side, midiAtWhiteIndex(winCenter)) : prev
+  const assignOpts = { longJump, phraseEnd }
 
-  const assignment = bestFingerAssignment(side, covering, base)
+  const assignment = bestFingerAssignment(side, covering, base, assignOpts)
   const locked = new Set<number>()
   const result = base.slice()
   if (assignment) {
@@ -322,7 +342,7 @@ function fingerMidis(
   } else if (covering.length > 0) {
     // Last resort: park the densest playable subset on the nearest block.
     const fallback = fitToHandSpan(side, covering.slice(0, 1))
-    const alone = bestFingerAssignment(side, fallback, base)
+    const alone = bestFingerAssignment(side, fallback, base, assignOpts)
     if (alone) {
       for (let finger = 0; finger < 5; finger++) {
         const midi = alone[finger]
@@ -398,6 +418,13 @@ const FINGER_TIP_DEPTH = [0.1, 0.02, -0.05, 0.01, 0.08] as const
 const FINGER_ARCH = [0.3, 1.0, 1.18, 0.92, 0.5] as const
 /** Knuckle row offset in palm units (negative = knuckles closer to tips = taller arch). */
 const FINGER_KNUCKLE_LIFT = [0.28, -0.1, -0.24, -0.08, 0.1] as const
+/**
+ * Hard max knuckle→tip length in palm `unit`s (thumb … pinky).
+ * Rough adult proportions — fingers never rubber-band past this; the palm moves instead.
+ */
+const FINGER_MAX_LEN = [3.55, 4.55, 5.05, 4.8, 3.85] as const
+/** Comfortable resting knuckle→tip length (middle reference) before any reach. */
+const FINGER_REST_LEN = 4.35
 
 function fingerChain(
   baseX: number,
@@ -454,6 +481,8 @@ export class Visualizer {
   private sparks: Spark[] = []
   private left = makeHand('left')
   private right = makeHand('right')
+  /** Song time when the current left/right pitch cross began, or null if uncrossed. */
+  private crossStartedAt: number | null = null
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
@@ -557,6 +586,7 @@ export class Visualizer {
     this.prev = -1
     this.camReady = false
     this.sparks = []
+    this.crossStartedAt = null
     this.left.ready = false
     this.right.ready = false
     this.left.lift = 0
@@ -570,6 +600,7 @@ export class Visualizer {
     const step = Math.max(0.001, Math.min(0.05, dt))
     if (this.prev < 0) this.prev = time
     if (time < this.prev - 0.04 && this.notes) {
+      this.crossStartedAt = null
       for (const note of this.notes) {
         if (note.start > time - 0.02) note.hit = false
       }
@@ -578,6 +609,7 @@ export class Visualizer {
     this.frameCamera(time, step)
     const layout = this.layout()
     this.reassignDistantNotes(time)
+    this.resolveHandCrossing(time)
     this.separateHands()
     this.updateHand(this.left, time, step, layout)
     this.updateHand(this.right, time, step, layout)
@@ -666,16 +698,89 @@ export class Visualizer {
   }
 
   private separateHands() {
-    // Only stop the hands from crossing — do not shove them apart by a fixed gap.
+    // Uncross home positions when they invert — keep a small natural gap.
     if (this.left.home < this.right.home - 1) return
     const mid = (this.left.home + this.right.home) / 2
-    this.left.home = mid - 1.5
-    this.right.home = mid + 1.5
+    this.left.home = mid - 3
+    this.right.home = mid + 3
+  }
+
+  /** True when left is playing higher pitches than right (arms crossed in pitch space). */
+  private handsPitchCrossed(leftNotes: NoteEvent[], rightNotes: NoteEvent[]): boolean {
+    if (leftNotes.length === 0 || rightNotes.length === 0) return false
+    const leftHi = Math.max(...leftNotes.map((note) => note.midi))
+    const rightLo = Math.min(...rightNotes.map((note) => note.midi))
+    return leftHi > rightLo
+  }
+
+  /**
+   * Allow a brief cross, then force a contiguous left=low / right=high split so
+   * hands do not stay crossed for long stretches.
+   */
+  private resolveHandCrossing(time: number) {
+    if (!this.notes) {
+      this.crossStartedAt = null
+      return
+    }
+    const active = this.notes.filter(
+      (note) => time >= note.start - 0.05 && time < note.end + 0.02,
+    )
+    const leftNotes = active.filter((note) => note.hand === 'left')
+    const rightNotes = active.filter((note) => note.hand === 'right')
+    const crossed =
+      this.handsPitchCrossed(leftNotes, rightNotes) ||
+      (leftNotes.length > 0 && rightNotes.length > 0 && this.left.home > this.right.home - 0.35)
+
+    if (!crossed) {
+      this.crossStartedAt = null
+      return
+    }
+    if (this.crossStartedAt == null || time < this.crossStartedAt) this.crossStartedAt = time
+    if (time - this.crossStartedAt < MAX_HAND_CROSS_SEC) return
+
+    const all = [...leftNotes, ...rightNotes]
+    const unique = [...new Set(all.map((note) => note.midi))].sort((a, b) => a - b)
+    if (unique.length < 2) {
+      this.crossStartedAt = null
+      return
+    }
+
+    let bestSplit: number | null = null
+    let bestScore = -Infinity
+    for (let i = 0; i < unique.length - 1; i++) {
+      const low = unique.slice(0, i + 1)
+      const high = unique.slice(i + 1)
+      if (!canFingerNotes('left', low) || !canFingerNotes('right', high)) continue
+      const gap = unique[i + 1] - unique[i]
+      const balance = -Math.abs(low.length - high.length)
+      const score = gap * 3 + balance * 12 - Math.abs((unique[i] + unique[i + 1]) / 2 - 60) * 0.05
+      if (score > bestScore) {
+        bestScore = score
+        bestSplit = (unique[i] + unique[i + 1]) / 2
+      }
+    }
+
+    if (bestSplit == null) {
+      // Cannot re-finger a clean split — at least push homes apart.
+      const mid = (this.left.home + this.right.home) / 2
+      this.left.home = Math.min(this.left.home, mid - 4)
+      this.right.home = Math.max(this.right.home, mid + 4)
+      return
+    }
+
+    for (const note of all) {
+      const hand = note.midi < bestSplit ? 'left' : 'right'
+      if (note.hand === hand) continue
+      note.hand = hand
+      note.color = colorFor(hand, note.midi)
+    }
+    this.crossStartedAt = null
   }
 
   /**
    * If a note is outside a hand's 9-note reach, give it to the other hand when that
    * hand has free fingers and can cover it without stretching past HAND_OPEN.
+   * Refuses moves that would create a long-lived pitch cross.
    */
   private reassignDistantNotes(time: number) {
     if (!this.notes) return
@@ -725,6 +830,18 @@ export class Visualizer {
           if (toDist >= fromDist - 0.5) continue
         }
 
+        // Don't invent a sustained cross (left above right) for a long remaining note.
+        const nextLeft = from.side === 'left' ? fromNotes.filter((n) => n !== note) : [...toNotes, note]
+        const nextRight = from.side === 'right' ? fromNotes.filter((n) => n !== note) : [...toNotes, note]
+        const remaining = note.end - time
+        if (
+          this.handsPitchCrossed(nextLeft, nextRight) &&
+          remaining > MAX_HAND_CROSS_SEC &&
+          !this.handsPitchCrossed(fromNotes, toNotes)
+        ) {
+          continue
+        }
+
         note.hand = to.side
         note.color = colorFor(to.side, note.midi)
         toMidis.push(note.midi)
@@ -739,13 +856,26 @@ export class Visualizer {
   private updateHand(hand: HandState, time: number, dt: number, layout: Layout) {
     const active: number[] = []
     const sounding: number[] = []
+    let activeEnd = time
     if (this.notes) {
       for (const note of this.notes) {
         if (note.hand !== hand.side) continue
-        if (time >= note.start - 0.11 && time < note.end + 0.02) active.push(note.midi)
+        if (time >= note.start - 0.11 && time < note.end + 0.02) {
+          active.push(note.midi)
+          activeEnd = Math.max(activeEnd, note.end)
+        }
         if (time >= note.start && time < note.end) sounding.push(note.midi)
       }
     }
+    // No soon-following notes for this hand → treat as phrase end (prefer pinky on long leaps).
+    const phraseEnd =
+      active.length > 0 &&
+      !(this.notes ?? []).some(
+        (note) =>
+          note.hand === hand.side &&
+          note.start > activeEnd - 0.02 &&
+          note.start <= activeEnd + 0.5,
+      )
     // Home follows the notes this hand must play (prefer sounding), not a forced wide stance.
     const focus = sounding.length ? sounding : active
     if (focus.length) {
@@ -756,7 +886,7 @@ export class Visualizer {
       hand.home += (targetHome - hand.home) * follow
     }
     const previous = hand.ready ? hand.fingers.map((finger) => finger.midi) : null
-    const targets = fingerMidis(hand.side, active, hand.home, previous)
+    const targets = fingerMidis(hand.side, active, hand.home, previous, phraseEnd)
     // Whole-hand jump: snap tips so the hand relocates instead of stretching mid-glide.
     const coverCheck =
       active.length && canFingerNotes(hand.side, active) ? active : fitToHandSpan(hand.side, active)
@@ -765,18 +895,21 @@ export class Visualizer {
     const pressGlide = hand.ready ? 1 - Math.exp(-16 * dt) : 1
     const liftGlide = hand.ready ? 1 - Math.exp(-8 * dt) : 1
     const thumbShift = layout.whiteW * (hand.side === 'right' ? -0.18 : 0.18)
-    // Raise the whole hand for sharps instead of stretching individual fingers.
+    // Whole hand lifts / slides forward for sharps — fingers stay rigid length.
     const liftTarget = targets.some((midi) => isBlack(midi)) ? 1 : 0
     hand.lift += (liftTarget - hand.lift) * (jumped ? 1 : liftGlide)
     const liftPx = hand.lift * this.blackKeyLift()
     for (let index = 0; index < 5; index++) {
       const midi = targets[index]
       const finger = hand.fingers[index]
-      const pressed = sounding.some((playing) => Math.abs(playing - midi) < 0.8) ? 1 : 0
+      const onBlack = isBlack(midi)
+      const pressed = sounding.some((playing) => Math.round(playing) === Math.round(midi)) ? 1 : 0
       finger.midi = midi
       const tipX = layout.centerX(midi) + (index === 0 ? thumbShift : 0)
+      // Same lift for every finger; tiny extra depth on blacks only (not a stretch).
+      const tipY = this.fingerY(index, pressed, onBlack) - liftPx
       finger.x += (tipX - finger.x) * glide
-      finger.y += (this.fingerY(index, pressed) - liftPx - finger.y) * glide
+      finger.y += (tipY - finger.y) * glide
       finger.pressed += (pressed - finger.pressed) * pressGlide
     }
     if (jumped) {
@@ -784,6 +917,13 @@ export class Visualizer {
     }
     // Keep tips ordered without opening the hand past 9 white keys.
     this.uncrossFingerPositions(hand, Math.max(6, layout.whiteW * 0.55), layout.whiteW)
+    // Keep pressed sharps on the black key center after uncross (hand moves, finger doesn't stretch).
+    for (let index = 0; index < 5; index++) {
+      const finger = hand.fingers[index]
+      if (finger.pressed < 0.35 || !isBlack(finger.midi)) continue
+      const tipX = layout.centerX(finger.midi) + (index === 0 ? thumbShift : 0)
+      finger.x += (tipX - finger.x) * Math.min(1, glide + 0.35)
+    }
     const palmTarget = this.palmTargetX(hand, layout.whiteW)
     const palmGlide = jumped || !hand.ready ? 1 : 1 - Math.exp(-5.5 * dt)
     hand.palmX += (palmTarget - hand.palmX) * palmGlide
@@ -853,15 +993,22 @@ export class Visualizer {
     }
   }
 
-  /** How far the hand rises to play black keys without lengthening fingers. */
+  /** How far the whole hand slides forward/up onto the black-key row. */
   private blackKeyLift(): number {
-    return (this.h - this.keyboardTop) * 0.22
+    return (this.h - this.keyboardTop) * 0.2
   }
 
-  private fingerY(index: number, pressed: number): number {
+  private fingerY(index: number, pressed: number, onBlack = false): number {
     const whiteH = this.h - this.keyboardTop
     const depth = FINGER_TIP_DEPTH[index] ?? 0
-    return this.keyboardTop + whiteH * (0.58 + depth) + pressed * Math.min(18, whiteH * 0.05)
+    // Blacks are only slightly further in; reach comes from hand lift, not longer fingers.
+    const blackForward = onBlack ? -whiteH * 0.035 : 0
+    return (
+      this.keyboardTop +
+      whiteH * (0.58 + depth) +
+      blackForward +
+      pressed * Math.min(18, whiteH * 0.05)
+    )
   }
 
   private activeNotes(time: number): Map<number, NoteEvent> {
@@ -1119,7 +1266,7 @@ export class Visualizer {
   private drawHand(hand: HandState, whiteW: number) {
     if (!Number.isFinite(hand.palmX)) return
     const ctx = this.ctx
-    // Open 9 notes with slender, long fingers — palm narrower than the tips.
+    // Open 9 notes with slender fingers — palm narrower than the tips.
     const openPx = whiteW * HAND_OPEN
     const unit = Math.max(10, Math.min(openPx / 11.5, whiteW * 0.92))
     const side = hand.side === 'right' ? 1 : -1
@@ -1134,29 +1281,67 @@ export class Visualizer {
     const tipCenter = (tipMin + tipMax) / 2
     const tipY = tips.reduce((sum, tip) => sum + tip.y, 0) / tips.length
     const thumbPull = this.thumbPalmPull(hand, whiteW)
-    // Longer hand so outer fingers reach without bending sideways.
-    const fingerLen = Math.max(unit * 7.1, openPx * 0.92)
-    const palmY = Math.min(this.h - unit * 0.35, tipY + fingerLen) + thumbPull.y
-    const palmX = tipCenter * 0.55 + hand.palmX * 0.45 + side * unit * 0.04 + thumbPull.x
+    // Resting finger length — never the old elastic 7× unit reach.
+    const restLen = unit * FINGER_REST_LEN
+    let palmY = Math.min(this.h - unit * 0.35, tipY + restLen) + thumbPull.y
+    let palmX = tipCenter * 0.55 + hand.palmX * 0.45 + side * unit * 0.04 + thumbPull.x
     const palmLean = side * 0.07 + thumbPull.lean
-
-    // Knuckles closer to tip span; thumb/pinky stay under the hand, not flared out.
     const knuckleScale = 0.8
-    const bases = tips.map((tip, index) => {
-      let x = palmX + (tip.x - tipCenter) * knuckleScale
-      let y = palmY + FINGER_KNUCKLE_LIFT[index] * unit * 1.4
-      if (index === 0) {
-        // Thumb root follows the palm toward the stretched tip.
-        x = tip.x * 0.35 + palmX * 0.65 - side * unit * 0.35
-        y = palmY + unit * 0.55 + thumbPull.y * 0.15
-      } else if (index === 1) {
-        x = palmX + (tip.x - tipCenter) * (knuckleScale * 0.92)
-      } else if (index === 4) {
-        x = palmX + (tip.x - tipCenter) * knuckleScale
-        y = palmY + unit * 0.18
+
+    const knuckleBases = (px: number, py: number) =>
+      tips.map((tip, index) => {
+        let x = px + (tip.x - tipCenter) * knuckleScale
+        let y = py + FINGER_KNUCKLE_LIFT[index] * unit * 1.4
+        if (index === 0) {
+          x = tip.x * 0.35 + px * 0.65 - side * unit * 0.35
+          y = py + unit * 0.55 + thumbPull.y * 0.15
+        } else if (index === 1) {
+          x = px + (tip.x - tipCenter) * (knuckleScale * 0.92)
+        } else if (index === 4) {
+          x = px + (tip.x - tipCenter) * knuckleScale
+          y = py + unit * 0.18
+        }
+        return { x, y }
+      })
+
+    // If a tip is out of reach, slide the whole palm diagonally toward it (no finger stretch).
+    for (let iter = 0; iter < 5; iter++) {
+      const bases = knuckleBases(palmX, palmY)
+      let shiftX = 0
+      let shiftY = 0
+      let count = 0
+      for (let index = 0; index < 5; index++) {
+        const maxLen = unit * FINGER_MAX_LEN[index]
+        const base = bases[index]
+        const tip = tips[index]
+        const dx = tip.x - base.x
+        const dy = tip.y - base.y
+        const dist = Math.hypot(dx, dy)
+        if (dist <= maxLen + 0.01) continue
+        const excess = dist - maxLen
+        shiftX += (dx / dist) * excess
+        shiftY += (dy / dist) * excess
+        count += 1
       }
-      return { x, y }
-    })
+      if (!count) break
+      palmX += shiftX / count
+      palmY += shiftY / count
+    }
+
+    const bases = knuckleBases(palmX, palmY)
+    // Hard clamp: draw tips only within max finger length (palm already moved to reach).
+    for (let index = 0; index < 5; index++) {
+      const maxLen = unit * FINGER_MAX_LEN[index]
+      const base = bases[index]
+      const tip = tips[index]
+      const dx = tip.x - base.x
+      const dy = tip.y - base.y
+      const dist = Math.hypot(dx, dy) || 1
+      if (dist <= maxLen) continue
+      tip.x = base.x + (dx / dist) * maxLen
+      tip.y = base.y + (dy / dist) * maxLen
+    }
+
     const knuckleSpan = Math.max(...bases.map((point) => point.x)) - Math.min(...bases.map((point) => point.x))
     const palmW = Math.max(tipSpan * 0.5, knuckleSpan * 0.72 + unit * 1.2)
     const chains = tips.map((tip, index) =>
