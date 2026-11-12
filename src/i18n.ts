@@ -77,6 +77,9 @@ const it: Dict = {
   practiceWait: 'Aspetta i tasti',
   practiceWaitHint:
     'In play lo scorrimento si ferma su ogni accordo finché non suoni quei tasti sulla tastiera MIDI.',
+  midiBridgeFromHome:
+    'Per usare una tastiera su un altro dispositivo, apri Nuovo / home e collega sotto TV, telefono e server.',
+  midiBridgeTitle: 'Ponte tastiera MIDI',
   midiBridgeIdle: 'Ponte MIDI spento',
   midiBridgeHost: 'TV: crea codice',
   midiBridgeStop: 'Ferma ponte',
@@ -84,7 +87,7 @@ const it: Dict = {
   midiBridgeCodePh: 'Ab12',
   midiBridgeConnect: 'Collega',
   midiBridgeHint:
-    'Sulla TV crea un codice, apri PianoSmith sul telefono (stesso server), inserisci il codice e collega la tastiera al telefono.',
+    'Sulla TV crea un codice (anche senza brano). Sul telefono, dalla home, inserisci il codice e collega la tastiera.',
   midiBridgeReady: 'TV in ascolto · codice {code}',
   midiBridgePhone: 'Telefono collegato · {code}',
   midiBridgeListening: 'In ascolto…',
@@ -235,6 +238,9 @@ const en: Dict = {
   practiceWait: 'Wait for keys',
   practiceWaitHint:
     'Playback pauses on each chord until you play those keys on a MIDI keyboard.',
+  midiBridgeFromHome:
+    'To use a keyboard on another device, open New / home and connect under TV, phone, and server.',
+  midiBridgeTitle: 'MIDI keyboard bridge',
   midiBridgeIdle: 'MIDI bridge off',
   midiBridgeHost: 'TV: create code',
   midiBridgeStop: 'Stop bridge',
@@ -242,7 +248,7 @@ const en: Dict = {
   midiBridgeCodePh: 'Ab12',
   midiBridgeConnect: 'Connect',
   midiBridgeHint:
-    'On the TV create a code, open PianoSmith on the phone (same server), enter the code, and plug the keyboard into the phone.',
+    'On the TV create a code (even without a song). On the phone, from home, enter the code and plug in the keyboard.',
   midiBridgeReady: 'TV listening · code {code}',
   midiBridgePhone: 'Phone linked · {code}',
   midiBridgeListening: 'Listening…',

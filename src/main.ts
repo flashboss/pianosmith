@@ -83,6 +83,7 @@ const loopClearBtn = el<HTMLButtonElement>('loop-clear')
 const loopRangeEl = el<HTMLParagraphElement>('loop-range')
 const loopBand = el<HTMLDivElement>('loop-band')
 const practiceWaitBtn = el<HTMLButtonElement>('practice-wait')
+const practiceWaitStatusEl = el<HTMLParagraphElement>('practice-wait-status')
 const midiBridgeStatusEl = el<HTMLParagraphElement>('midi-bridge-status')
 const midiBridgeHostBtn = el<HTMLButtonElement>('midi-bridge-host')
 const midiBridgeStopBtn = el<HTMLButtonElement>('midi-bridge-stop')
@@ -428,10 +429,13 @@ function syncPracticeUi() {
   practiceWaitBtn.setAttribute('aria-pressed', practiceWait ? 'true' : 'false')
   const waiting = player?.practiceFrozen ? player.waitingMidis : []
   if (waiting?.length) {
-    midiBridgeStatusEl.textContent = t('midiBridgeWaiting', {
+    practiceWaitStatusEl.hidden = false
+    practiceWaitStatusEl.textContent = t('midiBridgeWaiting', {
       notes: waiting.map((midi) => noteLabel(midi, true)).join(' '),
     })
-    return
+  } else {
+    practiceWaitStatusEl.hidden = true
+    practiceWaitStatusEl.textContent = ''
   }
   if (midiBridgeMode === 'tv' && midiBridge.code) {
     midiBridgeStatusEl.textContent = t('midiBridgeReady', { code: midiBridge.code })

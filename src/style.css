@@ -771,6 +771,34 @@ summary { cursor: pointer; }
   margin-top: 10px;
 }
 
+.midi-bridge-title {
+  margin: 14px 0 4px;
+  font-weight: 600;
+}
+
+.midi-bridge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.midi-bridge-join {
+  margin-top: 8px;
+}
+
+.midi-bridge-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.midi-bridge-row input {
+  flex: 0 0 5.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .hint { font-size: 13px; line-height: 1.4; }
 
 #link-kind { margin: 8px 0 0; }

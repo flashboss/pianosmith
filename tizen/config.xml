@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://pianosmith.app/widget" version="1.0.11" viewmodes="maximized">
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://pianosmith.app/widget" version="1.0.12" viewmodes="maximized">
     <access origin="*" subdomains="true"/>
     <tizen:application id="PianoSmith.player" package="PianoSmith" required_version="6.0"/>
     <content src="index.html"/>
