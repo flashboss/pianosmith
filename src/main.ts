@@ -34,7 +34,7 @@ import { isMidiFile, notesFromMidi, songToMidiBlob } from './midi'
 import { notesDuration } from './piano'
 import { Player, type SoundSource } from './player'
 import { canRecord, recordSong } from './record'
-import { prepareNotes } from './theory'
+import { clampDifficulty, prepareNotes, simplifyByDifficulty } from './theory'
 import { transcribeAudio } from './transcribe'
 import type { NoteEvent, RawNote } from './types'
 
@@ -71,6 +71,9 @@ const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
 const audioBtn = el<HTMLButtonElement>('audio')
 const soundSourceBtn = el<HTMLButtonElement>('sound-source')
+const difficultyLabelEl = el<HTMLParagraphElement>('difficulty-label')
+const difficultyDownBtn = el<HTMLButtonElement>('difficulty-down')
+const difficultyUpBtn = el<HTMLButtonElement>('difficulty-up')
 const loopBtn = el<HTMLButtonElement>('loop')
 const loopABtn = el<HTMLButtonElement>('loop-a')
 const loopBBtn = el<HTMLButtonElement>('loop-b')
@@ -211,6 +214,9 @@ function loadSeekStep() {
 }
 let seekStep = loadSeekStep()
 let player: Player | null = null
+/** Full arrangement (difficulty 10). */
+let fullNotes: NoteEvent[] | null = null
+/** Notes after difficulty thinning (what you see and hear in notes mode). */
 let notes: NoteEvent[] | null = null
 let songTitle = ''
 let generation = 0
@@ -222,7 +228,8 @@ let toastTimer = 0
 let hideTimer = 0
 let currentLibraryFolder = ROOT_FOLDER_ID
 let libraryMoveOptions: Array<{ id: string; label: string }> = []
-let soundSource: SoundSource = localStorage.getItem('pianosmith.sound') === 'piano' ? 'piano' : 'original'
+let soundSource: SoundSource = localStorage.getItem('pianosmith.sound') === 'original' ? 'original' : 'piano'
+let difficulty = clampDifficulty(Number(localStorage.getItem('pianosmith.difficulty') ?? 10))
 
 {
   const resolved = serverFieldValue()
@@ -266,6 +273,7 @@ const audioMuted = localStorage.getItem('pianosmith.audio') === '0'
 syncAudioButton(audioMuted)
 const loopOn = localStorage.getItem('pianosmith.loop') === '1'
 loopBtn.setAttribute('aria-pressed', loopOn ? 'true' : 'false')
+syncDifficultyUi()
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -308,6 +316,35 @@ function syncKeysUi() {
   keysRightMoreBtn.disabled = zoomOn || !viz.canAdjustKeyEdge('right', 1)
   keysHintEl.textContent = t(zoomOn ? 'keysHintZoom' : 'keysHint')
   keysHintEl.dataset.i18n = zoomOn ? 'keysHintZoom' : 'keysHint'
+}
+
+function syncDifficultyUi(busy = !statusEl.hidden || recording) {
+  difficultyLabelEl.textContent = t('difficultyLevel', { n: difficulty })
+  const hasSong = Boolean(fullNotes?.length)
+  difficultyDownBtn.disabled = !hasSong || busy || difficulty <= 0
+  difficultyUpBtn.disabled = !hasSong || busy || difficulty >= 10
+}
+
+function activeNotesFromFull(source: NoteEvent[]): NoteEvent[] {
+  return simplifyByDifficulty(source, difficulty)
+}
+
+function applyDifficulty(next: number) {
+  const level = clampDifficulty(next)
+  if (level === difficulty && notes && fullNotes) {
+    syncDifficultyUi()
+    return
+  }
+  difficulty = level
+  localStorage.setItem('pianosmith.difficulty', String(difficulty))
+  syncDifficultyUi()
+  if (!fullNotes) return
+  const active = activeNotesFromFull(fullNotes)
+  notes = active
+  viz.setNotes(active)
+  const transport = player
+  if (!transport) return
+  transport.setNotes(active)
 }
 
 function stepKeyEdge(side: 'left' | 'right', delta: number) {
@@ -519,6 +556,7 @@ function syncUi() {
   loopBBtn.disabled = !hasSong || busy
   loopClearBtn.disabled = !hasSong || busy || !(player?.hasLoopRange() ?? false)
   syncAudioButton(player?.muted ?? localStorage.getItem('pianosmith.audio') === '0')
+  syncDifficultyUi(busy)
   syncLoopUi()
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
@@ -534,10 +572,12 @@ async function startSong(
   if (!alive()) return
   if (nextNotes.length === 0) throw new Error(t('noPianoNotes'))
   const transport = ensurePlayer()
-  notes = nextNotes
+  fullNotes = nextNotes
+  const active = activeNotesFromFull(nextNotes)
+  notes = active
   songTitle = title
   transport.pause()
-  transport.setNotes(nextNotes)
+  transport.setNotes(active)
   transport.setOriginalBuffer(original)
   // MIDI / demo have no original track — always live piano.
   const mode: SoundSource = original ? soundSource : 'piano'
@@ -545,7 +585,7 @@ async function startSong(
   transport.clearLoopRange()
   await transport.setRate(1)
   viz.setTitle(title)
-  viz.setNotes(nextNotes)
+  viz.setNotes(active)
   gate.hidden = true
   syncGateDismiss()
   hideStatus()
@@ -1304,6 +1344,14 @@ soundSourceBtn.addEventListener('click', () => {
   if (soundSourceBtn.hidden || soundSourceBtn.disabled) return
   const next: SoundSource = soundSource === 'piano' ? 'original' : 'piano'
   applySoundSource(next)
+})
+
+difficultyDownBtn.addEventListener('click', () => {
+  applyDifficulty(difficulty - 1)
+})
+
+difficultyUpBtn.addEventListener('click', () => {
+  applyDifficulty(difficulty + 1)
 })
 
 loopBtn.addEventListener('click', () => {
@@ -2130,6 +2178,7 @@ if (import.meta.env.DEV) {
         return player
       },
       prepareNotes,
+      simplifyByDifficulty,
       transcribeAudio,
       notesDuration,
     },

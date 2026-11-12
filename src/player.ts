@@ -22,7 +22,7 @@ export class Player {
   /** Original decoded audio when available; otherwise a silent timing buffer. */
   buffer: AudioBuffer | null = null
   private originalBuffer: AudioBuffer | null = null
-  soundSource: SoundSource = 'original'
+  soundSource: SoundSource = 'piano'
   playing = false
   rate = 1
   muted = false

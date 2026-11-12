@@ -443,6 +443,82 @@ export function prepareNotes(raw: RawNote[]): NoteEvent[] {
   return notes.filter((note) => note.end - note.start > 0.045)
 }
 
+/** Clamp difficulty to the 0–10 practice scale (10 = full arrangement). */
+export function clampDifficulty(level: number): number {
+  if (!Number.isFinite(level)) return 10
+  return Math.max(0, Math.min(10, Math.round(level)))
+}
+
+/**
+ * Importance for thinning: favor melody (top voice), bass roots, longer and louder
+ * notes; demote short inner voices and ornaments.
+ */
+function noteImportance(notes: NoteEvent[], index: number): number {
+  const note = notes[index]
+  const dur = Math.max(0.01, note.end - note.start)
+  const t = note.start + Math.min(0.04, dur * 0.25)
+  let maxM = note.midi
+  let minM = note.midi
+  let voices = 0
+  for (const other of notes) {
+    if (other.start <= t && other.end > t) {
+      voices += 1
+      if (other.midi > maxM) maxM = other.midi
+      if (other.midi < minM) minM = other.midi
+    }
+  }
+
+  let score = note.velocity * (0.45 + Math.sqrt(dur))
+  if (note.midi === maxM) score *= note.hand === 'right' ? 2.15 : 1.75
+  else if (note.midi === minM) score *= 1.7
+  else score *= Math.max(0.32, 1.05 - 0.14 * Math.max(0, voices - 2))
+  if (dur < 0.09) score *= 0.4
+  else if (dur > 0.5) score *= 1.28
+  return score
+}
+
+/**
+ * Thin a full (level-10) arrangement down to `level` (0–10).
+ * Lower levels keep fewer notes, preferring melody, bass, and strong accents.
+ */
+export function simplifyByDifficulty(notes: NoteEvent[], level: number): NoteEvent[] {
+  const lv = clampDifficulty(level)
+  if (lv >= 10 || notes.length === 0) {
+    return notes.map((note) => ({ ...note, hit: false }))
+  }
+
+  // Lower levels use wider windows so fewer onsets survive; ratio rises toward full density.
+  const ratio = lv <= 0 ? 0.02 : (lv / 10) ** 1.45
+  const windowSec =
+    lv <= 0 ? 2.35 : lv === 1 ? 1.55 : lv === 2 ? 1.15 : 0.34 + (10 - lv) * 0.11
+  const scores = new Float64Array(notes.length)
+  for (let i = 0; i < notes.length; i++) scores[i] = noteImportance(notes, i)
+
+  const keep = new Set<number>()
+  const duration = notes.reduce((max, note) => Math.max(max, note.end), 0)
+  for (let t = 0; t < duration + 1e-9; t += windowSec) {
+    const idxs: number[] = []
+    for (let i = 0; i < notes.length; i++) {
+      if (notes[i].start >= t && notes[i].start < t + windowSec) idxs.push(i)
+    }
+    if (idxs.length === 0) continue
+    idxs.sort((a, b) => scores[b] - scores[a] || notes[a].start - notes[b].start || a - b)
+    // Level 0: one skeleton note per window. From 1 up, scale toward the local density.
+    const quota = lv <= 0 ? 1 : Math.max(1, Math.round(idxs.length * ratio))
+    for (let k = 0; k < quota && k < idxs.length; k++) keep.add(idxs[k])
+  }
+
+  if (keep.size === 0) {
+    let best = 0
+    for (let i = 1; i < notes.length; i++) {
+      if (scores[i] > scores[best]) best = i
+    }
+    keep.add(best)
+  }
+
+  return notes.filter((_, index) => keep.has(index)).map((note) => ({ ...note, hit: false }))
+}
+
 export function rgba(color: [number, number, number], alpha: number): string {
   return `rgba(${color[0]},${color[1]},${color[2]},${alpha})`
 }
