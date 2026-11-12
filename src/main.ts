@@ -1531,25 +1531,55 @@ function isTizenTv() {
 }
 
 type SamsungAppCommon = {
-  AppCommonScreenSaverState: { SCREEN_SAVER_ON: number; SCREEN_SAVER_OFF: number }
+  AppCommonScreenSaverState?: { SCREEN_SAVER_ON: number; SCREEN_SAVER_OFF: number }
   setScreenSaver: (state: number, success?: () => void, error?: (error: unknown) => void) => void
+}
+
+type TizenPower = {
+  request?: (resource: string, state: string) => void
+  release?: (resource: string) => void
+  setScreenState?: (state: string) => void
 }
 
 /** Samsung Tizen: keep the panel awake while a song is playing. */
 let tvScreenSaverTimer = 0
 let tvScreenSaverPlaying = false
+let tvKeepAwakeLastMs = 0
 
-function setTvScreenSaverAllowed(allow: boolean) {
-  if (!isTizenTv()) return
-  const appcommon = (window as Window & { webapis?: { appcommon?: SamsungAppCommon } }).webapis
-    ?.appcommon
-  const states = appcommon?.AppCommonScreenSaverState
-  if (!appcommon?.setScreenSaver || !states) return
-  const state = allow ? states.SCREEN_SAVER_ON : states.SCREEN_SAVER_OFF
+function setTvScreenAwake(awake: boolean) {
+  const win = window as Window & {
+    webapis?: { appcommon?: SamsungAppCommon }
+    tizen?: { power?: TizenPower }
+  }
+
+  // 1) Samsung AppCommon screensaver (required for TV apps during “watch without input”).
   try {
-    appcommon.setScreenSaver(state)
+    const appcommon = win.webapis?.appcommon
+    if (appcommon?.setScreenSaver) {
+      const states = appcommon.AppCommonScreenSaverState
+      const off = states?.SCREEN_SAVER_OFF ?? 0
+      const on = states?.SCREEN_SAVER_ON ?? 1
+      appcommon.setScreenSaver(
+        awake ? off : on,
+        () => undefined,
+        () => undefined,
+      )
+    }
   } catch {
-    /* firmware without appcommon screensaver */
+    /* older firmware */
+  }
+
+  // 2) Tizen power lock — holds SCREEN_NORMAL while playing.
+  try {
+    const power = win.tizen?.power
+    if (awake) {
+      power?.request?.('SCREEN', 'SCREEN_NORMAL')
+      power?.setScreenState?.('SCREEN_NORMAL')
+    } else {
+      power?.release?.('SCREEN')
+    }
+  } catch {
+    /* missing power privilege / unsupported */
   }
 }
 
@@ -1559,15 +1589,24 @@ function syncTvScreenSaver() {
     return
   }
   tvScreenSaverPlaying = keepAwake
-  setTvScreenSaverAllowed(!keepAwake)
+  setTvScreenAwake(keepAwake)
   if (tvScreenSaverTimer) {
     window.clearInterval(tvScreenSaverTimer)
     tvScreenSaverTimer = 0
   }
   if (keepAwake) {
-    // Some firmwares re-arm the saver; refresh the off state periodically.
-    tvScreenSaverTimer = window.setInterval(() => setTvScreenSaverAllowed(false), 25000)
+    // Firmwares re-arm idle protection; refresh often while audio-only canvas “plays”.
+    tvScreenSaverTimer = window.setInterval(() => setTvScreenAwake(true), 5000)
   }
+}
+
+/** Called from the render loop so keep-awake does not depend only on player events. */
+function tickTvKeepAwake(now = performance.now()) {
+  if (!player?.playing) return
+  if (now - tvKeepAwakeLastMs < 4000) return
+  tvKeepAwakeLastMs = now
+  if (!tvScreenSaverPlaying) syncTvScreenSaver()
+  else setTvScreenAwake(true)
 }
 
 function isSmartTvUi() {
@@ -2205,6 +2244,7 @@ function loop(now: number) {
   } catch (error) {
     console.error(error)
   }
+  tickTvKeepAwake(now)
   if (player && notes && !scrubbing) {
     const duration = player.duration
     clock.textContent = `${fmt(player.currentTime)} / ${fmt(duration)}`
@@ -2213,6 +2253,10 @@ function loop(now: number) {
   requestAnimationFrame(loop)
 }
 requestAnimationFrame(loop)
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && player?.playing) setTvScreenAwake(true)
+})
 
 if (import.meta.env.DEV) {
   Object.assign(window, {
