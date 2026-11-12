@@ -70,6 +70,7 @@ const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const zoomBtn = el<HTMLButtonElement>('zoom')
 const audioBtn = el<HTMLButtonElement>('audio')
+const soundSourceBtn = el<HTMLButtonElement>('sound-source')
 const loopBtn = el<HTMLButtonElement>('loop')
 const loopABtn = el<HTMLButtonElement>('loop-a')
 const loopBBtn = el<HTMLButtonElement>('loop-b')
@@ -221,6 +222,13 @@ let toastTimer = 0
 let hideTimer = 0
 let currentLibraryFolder = ROOT_FOLDER_ID
 let libraryMoveOptions: Array<{ id: string; label: string }> = []
+/** Original track for audio/link songs (null for MIDI / demo). */
+let originalBuffer: AudioBuffer | null = null
+/** Synthesized piano from transcribed notes (lazy for audio songs). */
+let pianoBuffer: AudioBuffer | null = null
+type SoundSource = 'original' | 'piano'
+let soundSource: SoundSource = localStorage.getItem('pianosmith.sound') === 'piano' ? 'piano' : 'original'
+let pianoRenderJob = 0
 
 {
   const resolved = serverFieldValue()
@@ -274,6 +282,23 @@ function el<T extends HTMLElement>(id: string): T {
 function syncAudioButton(muted: boolean) {
   audioBtn.setAttribute('aria-pressed', muted ? 'false' : 'true')
   audioBtn.textContent = t(muted ? 'audioOff' : 'audioOn')
+  syncSoundSourceUi(muted)
+}
+
+function syncSoundSourceUi(muted = audioBtn.getAttribute('aria-pressed') !== 'true') {
+  const canChoose = Boolean(originalBuffer) && Boolean(notes?.length)
+  const show = !muted && canChoose
+  soundSourceBtn.hidden = !show
+  soundSourceBtn.disabled = !show
+  soundSourceBtn.textContent = t(soundSource === 'piano' ? 'soundNotes' : 'soundOriginal')
+  soundSourceBtn.setAttribute('aria-pressed', soundSource === 'piano' ? 'true' : 'false')
+}
+
+function preferredBuffer(): AudioBuffer | null {
+  if (soundSource === 'piano' && pianoBuffer) return pianoBuffer
+  if (soundSource === 'original' && originalBuffer) return originalBuffer
+  if (soundSource === 'piano' && originalBuffer && !pianoBuffer) return originalBuffer
+  return pianoBuffer || originalBuffer
 }
 
 function zoomEnabled() {
@@ -512,12 +537,23 @@ function syncUi() {
   if (player?.playing) poke()
 }
 
-async function startSong(title: string, nextNotes: NoteEvent[], buffer: AudioBuffer, alive: () => boolean) {
+async function startSong(
+  title: string,
+  nextNotes: NoteEvent[],
+  buffers: { original?: AudioBuffer | null; piano?: AudioBuffer | null },
+  alive: () => boolean,
+) {
   if (!alive()) return
   if (nextNotes.length === 0) throw new Error(t('noPianoNotes'))
   const transport = ensurePlayer()
   notes = nextNotes
   songTitle = title
+  originalBuffer = buffers.original ?? null
+  pianoBuffer = buffers.piano ?? null
+  pianoRenderJob += 1
+  if (!originalBuffer && !pianoBuffer) throw new Error(t('audioUnavailable'))
+  const buffer = preferredBuffer()
+  if (!buffer) throw new Error(t('audioUnavailable'))
   transport.pause()
   transport.buffer = buffer
   transport.clearLoopRange()
@@ -532,6 +568,47 @@ async function startSong(title: string, nextNotes: NoteEvent[], buffer: AudioBuf
   if (!alive()) return
   await transport.seek(0)
   await transport.play()
+  // Preference was "notes only" but piano is not ready yet — render and switch.
+  if (alive() && soundSource === 'piano' && originalBuffer && !pianoBuffer) {
+    void applySoundSource('piano')
+  }
+}
+
+async function ensurePianoBuffer(): Promise<AudioBuffer> {
+  if (pianoBuffer) return pianoBuffer
+  if (!notes?.length) throw new Error(t('noNotesToPlay'))
+  const job = ++pianoRenderJob
+  setStatus(t('renderingPiano'), null)
+  try {
+    const buffer = await renderPiano(notes)
+    if (job !== pianoRenderJob) return pianoBuffer || buffer
+    pianoBuffer = buffer
+    return buffer
+  } finally {
+    if (job === pianoRenderJob) hideStatus()
+  }
+}
+
+async function applySoundSource(next: SoundSource) {
+  soundSource = next
+  localStorage.setItem('pianosmith.sound', next)
+  syncSoundSourceUi()
+  if (!notes) return
+  const transport = ensurePlayer()
+  if (next === 'piano') {
+    try {
+      const buffer = await ensurePianoBuffer()
+      if (soundSource !== 'piano') return
+      await transport.setBuffer(buffer)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('somethingWrong'))
+      soundSource = 'original'
+      localStorage.setItem('pianosmith.sound', 'original')
+      syncSoundSourceUi()
+    }
+    return
+  }
+  if (originalBuffer) await transport.setBuffer(originalBuffer)
 }
 
 async function rememberSong(input: {
@@ -746,13 +823,13 @@ async function loadSaved(id: string) {
     if (song.kind === 'midi') {
       setStatus(t('renderingPiano'), null)
       const buffer = await renderPiano(next)
-      await startSong(song.title, next, buffer, job.alive)
+      await startSong(song.title, next, { piano: buffer }, job.alive)
       return
     }
     setStatus(t('loadingAudio'), 0.08)
     const audio = await transport.decode(song.data.slice(0))
     if (!job.alive()) return
-    await startSong(song.title, next, audio, job.alive)
+    await startSong(song.title, next, { original: audio }, job.alive)
   } catch (error) {
     if (!job.alive()) return
     fail(error)
@@ -784,7 +861,7 @@ async function loadFile(file: File) {
       setStatus(t('renderingPiano'), null)
       const buffer = await renderPiano(next)
       const title = file.name.replace(/\.(mid|midi)$/i, '') || parsed.title
-      await startSong(title, next, buffer, job.alive)
+      await startSong(title, next, { piano: buffer }, job.alive)
       if (job.alive()) {
         void rememberSong({
           title,
@@ -808,7 +885,7 @@ async function loadFile(file: File) {
     })
     if (!job.alive()) return
     const title = file.name.replace(/\.[^.]+$/, '') || 'Audio'
-    await startSong(title, prepareNotes(raw), audio, job.alive)
+    await startSong(title, prepareNotes(raw), { original: audio }, job.alive)
     if (job.alive()) {
       void rememberSong({
         title,
@@ -853,7 +930,7 @@ async function loadLink(url: string) {
       setStatus(t('renderingPiano'), null)
       const buffer = await renderPiano(next)
       const title = downloaded.title || parsed.title
-      await startSong(title, next, buffer, job.alive)
+      await startSong(title, next, { piano: buffer }, job.alive)
       if (job.alive()) {
         void rememberSong({
           title,
@@ -875,7 +952,7 @@ async function loadLink(url: string) {
       if (job.alive()) setStatus(label, ratio)
     })
     if (!job.alive()) return
-    await startSong(downloaded.title, prepareNotes(raw), audio, job.alive)
+    await startSong(downloaded.title, prepareNotes(raw), { original: audio }, job.alive)
     if (job.alive()) {
       void rememberSong({
         title: downloaded.title,
@@ -901,7 +978,7 @@ async function loadDemo() {
     setStatus(t('preparingDemo'), null)
     const next = prepareNotes(demoNotes())
     const buffer = await renderPiano(next)
-    await startSong(t('demoTitle'), next, buffer, job.alive)
+    await startSong(t('demoTitle'), next, { piano: buffer }, job.alive)
   } catch (error) {
     if (!job.alive()) return
     fail(error)
@@ -1276,6 +1353,12 @@ audioBtn.addEventListener('click', () => {
   localStorage.setItem('pianosmith.audio', muted ? '0' : '1')
   ensurePlayer().setMuted(muted)
   syncAudioButton(muted)
+})
+
+soundSourceBtn.addEventListener('click', () => {
+  if (soundSourceBtn.hidden || soundSourceBtn.disabled) return
+  const next: SoundSource = soundSource === 'piano' ? 'original' : 'piano'
+  void applySoundSource(next)
 })
 
 loopBtn.addEventListener('click', () => {

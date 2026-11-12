@@ -227,4 +227,21 @@ export class Player {
     if (was) await this.play()
     else this.onChange?.()
   }
+
+  /** Swap the playing buffer while keeping position (and play state). */
+  async setBuffer(buffer: AudioBuffer) {
+    const time = this.currentTime
+    const was = this.playing
+    this.playing = false
+    this.stopSource()
+    this.buffer = buffer
+    this.offset = Math.max(0, Math.min(time, Math.max(0, buffer.duration - 0.01)))
+    if (this.loop && buffer.duration > 0) {
+      const start = this.effectiveLoopStart()
+      const end = this.effectiveLoopEnd()
+      this.offset = Math.max(start, Math.min(this.offset, end - 0.01))
+    }
+    if (was) await this.play()
+    else this.onChange?.()
+  }
 }
