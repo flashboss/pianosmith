@@ -117,6 +117,7 @@ const libraryCard = el<HTMLDivElement>('library-card')
 const libraryPath = el<HTMLElement>('library-path')
 const libraryBrowser = el<HTMLUListElement>('library-browser')
 const libraryEmpty = el<HTMLParagraphElement>('library-empty')
+const libraryLoading = el<HTMLDivElement>('library-loading')
 const libraryNewFolderBtn = el<HTMLButtonElement>('library-new-folder')
 const libraryFolderForm = el<HTMLFormElement>('library-folder-form')
 const libraryFolderName = el<HTMLInputElement>('library-folder-name')
@@ -787,6 +788,10 @@ function appendLibraryRow(options: {
 }
 
 async function renderLibraryBrowser() {
+  libraryLoading.hidden = false
+  libraryBrowser.hidden = true
+  libraryEmpty.hidden = true
+  libraryBrowser.replaceChildren()
   try {
     const [folders, songs, path, moves] = await Promise.all([
       listFolders(currentLibraryFolder),
@@ -796,7 +801,6 @@ async function renderLibraryBrowser() {
     ])
     libraryMoveOptions = moves
     renderLibraryPath(path)
-    libraryBrowser.replaceChildren()
     for (const folder of folders) {
       appendLibraryRow({
         kind: 'folder',
@@ -818,6 +822,10 @@ async function renderLibraryBrowser() {
   } catch (error) {
     console.error(error)
     toast(error instanceof Error ? error.message : t('playlistUnavailable'))
+    libraryEmpty.hidden = false
+  } finally {
+    libraryLoading.hidden = true
+    libraryBrowser.hidden = false
   }
 }
 

@@ -209,6 +209,10 @@
             <button type="submit" data-i18n="folderCreate">Create</button>
             <button id="library-folder-cancel" type="button" class="ghost" data-i18n="folderCancel">Cancel</button>
           </form>
+          <div id="library-loading" class="library-loading" hidden data-i18n-aria-label="libraryLoading" aria-label="Loading saved songs" aria-live="polite">
+            <span class="library-spinner" aria-hidden="true"></span>
+            <span data-i18n="libraryLoading">Loading saved songs…</span>
+          </div>
           <ul id="library-browser" class="library-browser"></ul>
           <p id="library-empty" class="hint" hidden data-i18n="libraryEmpty">This folder is empty.</p>
         </div>

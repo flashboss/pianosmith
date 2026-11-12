@@ -72,9 +72,33 @@ The TV build is a web widget staged in `tizen-app/` by `npm run build`.
 TV_IP=192.168.0.165 ./scripts/tizen-install.sh
 ```
 
-That requires the Tizen Studio CLI (`tizen`, `sdb`) and a TV certificate profile. Local audio and MIDI work inside the widget. For shared links, set **Server** in the app to your Railway URL or `http://<computer>:5173` (the packaged TV UI defaults to the Railway host when it has no usable page origin).
+That requires the Tizen Studio CLI (`tizen`, `sdb`) and a TV certificate profile. Local audio and MIDI **files** work inside the widget. For shared links, set **Server** in the app to your Railway URL or `http://<computer>:5173` (the packaged TV UI defaults to the Railway host when it has no usable page origin).
 
 The package id is `PianoSmith` and the app id is `PianoSmith.player`.
+
+A USB MIDI keyboard plugged into the TV is **not** readable by the Tizen web app (no Web MIDI). Use the [MIDI practice bridge](#midi-practice-and-keyboard-bridge) below: the TV displays, another device sends the keys.
+
+## MIDI practice and keyboard bridge
+
+**Wait for keys** (Options → Practice) freezes playback on each chord until those MIDI notes are held. Difficulty still controls which notes appear.
+
+### Same device (browser or phone)
+
+1. Open PianoSmith in a browser with [Web MIDI](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API) (Chrome/Edge on desktop or Android; Safari/iPhone usually do not support it).
+2. Plug in a USB (or compatible) MIDI keyboard.
+3. Turn on **Wait for keys**, load a song, press Play.
+
+No bridge code is needed.
+
+### Display + keyboard on two devices (e.g. Samsung TV + phone/PC)
+
+Both devices must use the **same Server** (Railway URL, or `http://<lan-host>:5173` while `npm run dev` / `npm start` is running). The app server relays notes (`POST /api/midi/:code`, SSE `GET /api/midi/:code/stream`).
+
+1. On the **display** (usually the TV): home → **TV, devices, and server** → set Server if needed → **Display: create code**. Note the four-character code.
+2. On the **keyboard device** (phone, tablet, or PC with Web MIDI): open PianoSmith on the same Server (home screen is enough; you do not need to load a song) → enter the code → **Connect** → plug the MIDI keyboard into that device.
+3. On the display: Options → enable **Wait for keys** → load a song → Play. Notes pause until the correct keys arrive from the other device.
+
+**Stop bridge** ends the link on that device. Create/connect live on the home screen so a phone can join without opening Options (which requires a loaded song).
 
 ## Android
 
