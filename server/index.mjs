@@ -5,6 +5,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { handleMidiBridge } from './midi-bridge.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const prod = process.env.NODE_ENV === 'production'
@@ -682,6 +683,7 @@ const server = http.createServer(async (req, res) => {
     return
   }
   try {
+    if (await handleMidiBridge(req, res, url, sendJson, readBody)) return
     if (url.pathname === '/api/health') {
       const ytdlp = await ytdlpAvailable()
       try {

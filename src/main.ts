@@ -31,10 +31,12 @@ import {
   type LibrarySongMeta,
 } from './library'
 import { isMidiFile, notesFromMidi, songToMidiBlob } from './midi'
+import { MidiBridge } from './midi-bridge'
+import { MidiInput } from './midi-input'
 import { notesDuration } from './piano'
 import { Player, type SoundSource } from './player'
 import { canRecord, recordSong } from './record'
-import { clampDifficulty, prepareNotes, simplifyByDifficulty } from './theory'
+import { clampDifficulty, noteLabel, prepareNotes, simplifyByDifficulty } from './theory'
 import { transcribeAudio } from './transcribe'
 import type { NoteEvent, RawNote } from './types'
 
@@ -80,6 +82,12 @@ const loopBBtn = el<HTMLButtonElement>('loop-b')
 const loopClearBtn = el<HTMLButtonElement>('loop-clear')
 const loopRangeEl = el<HTMLParagraphElement>('loop-range')
 const loopBand = el<HTMLDivElement>('loop-band')
+const practiceWaitBtn = el<HTMLButtonElement>('practice-wait')
+const midiBridgeStatusEl = el<HTMLParagraphElement>('midi-bridge-status')
+const midiBridgeHostBtn = el<HTMLButtonElement>('midi-bridge-host')
+const midiBridgeStopBtn = el<HTMLButtonElement>('midi-bridge-stop')
+const midiBridgeCodeInput = el<HTMLInputElement>('midi-bridge-code')
+const midiBridgeJoinBtn = el<HTMLButtonElement>('midi-bridge-join')
 const midiBtn = el<HTMLButtonElement>('midi')
 const sheetBtn = el<HTMLButtonElement>('sheet')
 const videoBtn = el<HTMLButtonElement>('video')
@@ -230,6 +238,11 @@ let currentLibraryFolder = ROOT_FOLDER_ID
 let libraryMoveOptions: Array<{ id: string; label: string }> = []
 let soundSource: SoundSource = localStorage.getItem('pianosmith.sound') === 'original' ? 'original' : 'piano'
 let difficulty = clampDifficulty(Number(localStorage.getItem('pianosmith.difficulty') ?? 10))
+let practiceWait = localStorage.getItem('pianosmith.practiceWait') === '1'
+const midiInput = new MidiInput()
+const midiBridge = new MidiBridge()
+let midiBridgeMode: 'off' | 'tv' | 'phone' = 'off'
+let midiBridgeStatusKey = 'midiBridgeIdle'
 
 {
   const resolved = serverFieldValue()
@@ -401,8 +414,34 @@ function ensurePlayer() {
     player.setMuted(localStorage.getItem('pianosmith.audio') === '0')
     player.setLoop(localStorage.getItem('pianosmith.loop') === '1')
     player.setSoundSource(soundSource)
+    player.setPracticeWait(practiceWait)
   }
   return player
+}
+
+function onMidiActivity(midi: number, on: boolean, velocity: number) {
+  ensurePlayer().midiNote(midi, on)
+  if (midiBridgeMode === 'phone') void midiBridge.send(midi, on, velocity)
+}
+
+function syncPracticeUi() {
+  practiceWaitBtn.setAttribute('aria-pressed', practiceWait ? 'true' : 'false')
+  const waiting = player?.practiceFrozen ? player.waitingMidis : []
+  if (waiting?.length) {
+    midiBridgeStatusEl.textContent = t('midiBridgeWaiting', {
+      notes: waiting.map((midi) => noteLabel(midi, true)).join(' '),
+    })
+    return
+  }
+  if (midiBridgeMode === 'tv' && midiBridge.code) {
+    midiBridgeStatusEl.textContent = t('midiBridgeReady', { code: midiBridge.code })
+    return
+  }
+  if (midiBridgeMode === 'phone' && midiBridge.code) {
+    midiBridgeStatusEl.textContent = t('midiBridgePhone', { code: midiBridge.code })
+    return
+  }
+  midiBridgeStatusEl.textContent = t(midiBridgeStatusKey)
 }
 
 function fmt(time: number) {
@@ -561,6 +600,7 @@ function syncUi() {
   syncAudioButton(player?.muted ?? localStorage.getItem('pianosmith.audio') === '0')
   syncDifficultyUi(busy)
   syncLoopUi()
+  syncPracticeUi()
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
   syncTvScreenSaver()
@@ -1356,6 +1396,77 @@ difficultyDownBtn.addEventListener('click', () => {
 
 difficultyUpBtn.addEventListener('click', () => {
   applyDifficulty(difficulty + 1)
+})
+
+practiceWaitBtn.addEventListener('click', () => {
+  practiceWait = practiceWaitBtn.getAttribute('aria-pressed') !== 'true'
+  localStorage.setItem('pianosmith.practiceWait', practiceWait ? '1' : '0')
+  ensurePlayer().setPracticeWait(practiceWait)
+  if (practiceWait) {
+    midiInput.onNotes(onMidiActivity)
+    void midiInput.start().then((status) => {
+      if (midiBridgeMode === 'off') {
+        midiBridgeStatusKey =
+          status === 'ok' ? 'midiBridgeMidiOk' : status === 'unsupported' ? 'midiBridgeNoWebMidi' : 'midiBridgeNoWebMidi'
+        syncPracticeUi()
+      }
+    })
+  }
+  syncPracticeUi()
+})
+
+midiBridgeHostBtn.addEventListener('click', () => {
+  void (async () => {
+    try {
+      midiBridgeStatusKey = 'midiBridgeListening'
+      syncPracticeUi()
+      const code = await midiBridge.createRoom()
+      midiBridge.setHandlers(
+        (midi, on) => ensurePlayer().midiNote(midi, on),
+        (status) => {
+          if (status === 'error') midiBridgeStatusKey = 'midiBridgeError'
+          else if (status === 'ready') midiBridgeStatusKey = 'midiBridgeReady'
+          syncPracticeUi()
+        },
+      )
+      midiBridge.listen(code)
+      midiBridgeMode = 'tv'
+      midiBridgeCodeInput.value = code
+      localStorage.setItem('pianosmith.midiRoom', code)
+      syncPracticeUi()
+    } catch {
+      midiBridgeMode = 'off'
+      midiBridgeStatusKey = 'midiBridgeError'
+      syncPracticeUi()
+    }
+  })()
+})
+
+midiBridgeJoinBtn.addEventListener('click', () => {
+  void (async () => {
+    const code = midiBridgeCodeInput.value.trim().toUpperCase()
+    if (code.length < 4) return
+    midiBridge.joinRoom(code)
+    midiBridgeMode = 'phone'
+    midiInput.onNotes(onMidiActivity)
+    const midiStatus = await midiInput.start()
+    if (midiStatus === 'unsupported' || midiStatus === 'denied') {
+      midiBridgeStatusKey = 'midiBridgeNoWebMidi'
+    } else {
+      midiBridgeStatusKey = 'midiBridgeMidiOk'
+    }
+    localStorage.setItem('pianosmith.midiRoom', code)
+    syncPracticeUi()
+  })()
+})
+
+midiBridgeStopBtn.addEventListener('click', () => {
+  midiBridge.stop()
+  midiInput.stop()
+  midiInput.onNotes(null)
+  midiBridgeMode = 'off'
+  midiBridgeStatusKey = 'midiBridgeIdle'
+  syncPracticeUi()
 })
 
 loopBtn.addEventListener('click', () => {

@@ -31,6 +31,14 @@ export class Player {
   loopStart: number | null = null
   /** Practice loop end (seconds). Null = end of song. */
   loopEnd: number | null = null
+  /** Freeze at each chord until those MIDI notes are held. */
+  practiceWait = false
+  /** True while transport is frozen waiting for the player. */
+  practiceFrozen = false
+  /** Midis currently required (empty when not waiting). */
+  waitingMidis: number[] = []
+  private heldMidis = new Set<number>()
+  private practiceWatch = 0
   onChange: (() => void) | null = null
 
   private ensureGraph() {
@@ -196,8 +204,98 @@ export class Player {
   }
 
   get currentTime(): number {
-    if (!this.playing || !this.ctx) return this.offset
+    if (!this.playing || !this.ctx || this.practiceFrozen) return this.offset
     return this.offset + (this.ctx.currentTime - this.startedAt) * this.rate
+  }
+
+  setPracticeWait(on: boolean) {
+    this.practiceWait = on
+    if (!on) this.clearPracticeGate(true)
+    else if (this.playing) this.startPracticeWatch()
+    this.onChange?.()
+  }
+
+  /** Local or bridged MIDI key activity. */
+  midiNote(midi: number, on: boolean) {
+    const n = Math.round(midi)
+    if (!Number.isFinite(n)) return
+    if (on) this.heldMidis.add(n)
+    else this.heldMidis.delete(n)
+    if (this.practiceWait && this.practiceFrozen) this.tryReleasePracticeGate()
+  }
+
+  clearHeldMidis() {
+    this.heldMidis.clear()
+  }
+
+  private nextPracticeChord(fromTime: number): { time: number; midis: number[] } | null {
+    const upcoming = this.notes
+      .filter((note) => note.start >= fromTime - 0.001)
+      .sort((a, b) => a.start - b.start || a.midi - b.midi)
+    if (!upcoming.length) return null
+    const time = upcoming[0].start
+    const midis = [
+      ...new Set(
+        upcoming.filter((note) => note.start <= time + 0.045).map((note) => Math.round(note.midi)),
+      ),
+    ]
+    return midis.length ? { time, midis } : null
+  }
+
+  private startPracticeWatch() {
+    this.stopPracticeWatch()
+    if (!this.practiceWait) return
+    this.practiceWatch = window.setInterval(() => this.tickPracticeGate(), 40)
+  }
+
+  private stopPracticeWatch() {
+    if (this.practiceWatch) {
+      window.clearInterval(this.practiceWatch)
+      this.practiceWatch = 0
+    }
+  }
+
+  private clearPracticeGate(resume: boolean) {
+    this.stopPracticeWatch()
+    const wasFrozen = this.practiceFrozen
+    this.practiceFrozen = false
+    this.waitingMidis = []
+    if (resume && wasFrozen && this.playing) void this.play()
+    else if (wasFrozen) this.onChange?.()
+  }
+
+  private freezeAt(time: number, midis: number[]) {
+    if (this.practiceFrozen) return
+    this.offset = time
+    this.practiceFrozen = true
+    this.waitingMidis = midis
+    this.stopSource()
+    // Keep playing=true so UI stays in "play / waiting" state.
+    this.playing = true
+    this.syncLive(false)
+    this.onChange?.()
+    this.tryReleasePracticeGate()
+  }
+
+  private tryReleasePracticeGate() {
+    if (!this.practiceFrozen || !this.waitingMidis.length) return
+    const ok = this.waitingMidis.every((midi) => this.heldMidis.has(midi))
+    if (!ok) return
+    const passed = this.waitingMidis[0]
+    const chordTime = this.offset
+    this.practiceFrozen = false
+    this.waitingMidis = []
+    // Skip just past this chord so we do not immediately re-freeze on the same onset.
+    this.offset = chordTime + 0.05
+    void this.play()
+    void passed
+  }
+
+  private tickPracticeGate() {
+    if (!this.practiceWait || !this.playing || this.practiceFrozen) return
+    const chord = this.nextPracticeChord(this.currentTime + 0.01)
+    if (!chord) return
+    if (this.currentTime + 0.02 >= chord.time) this.freezeAt(chord.time, chord.midis)
   }
 
   get duration(): number {
@@ -285,12 +383,14 @@ export class Player {
     this.source = source
     this.startedAt = this.ctx.currentTime
     this.playing = true
+    this.practiceFrozen = false
     if (slice != null) source.start(0, playOffset, slice)
     else source.start(0, playOffset)
     if (this.soundSource === 'piano') {
       this.syncLive(true)
       this.startScheduler()
     }
+    if (this.practiceWait) this.startPracticeWatch()
     this.onChange?.()
   }
 
@@ -299,6 +399,9 @@ export class Player {
     const time = this.currentTime
     this.playing = false
     this.offset = time
+    this.practiceFrozen = false
+    this.waitingMidis = []
+    this.stopPracticeWatch()
     this.stopSource()
     this.onChange?.()
   }

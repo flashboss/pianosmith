@@ -140,6 +140,34 @@
               <button id="loop-b" type="button" data-i18n="loopB">B · end</button>
             </div>
             <p id="loop-range" class="hint">Whole song</p>
+            <div class="settings-grid">
+              <button id="practice-wait" type="button" data-i18n="practiceWait" aria-pressed="false">Wait for keys</button>
+            </div>
+            <p id="practice-wait-hint" class="hint" data-i18n="practiceWaitHint">
+              Playback pauses on each chord until you play those keys on a MIDI keyboard.
+            </p>
+            <p id="midi-bridge-status" class="settings-keys-count" data-i18n="midiBridgeIdle">MIDI bridge off</p>
+            <div class="settings-grid">
+              <button id="midi-bridge-host" type="button" data-i18n="midiBridgeHost">TV: create code</button>
+              <button id="midi-bridge-stop" type="button" class="ghost" data-i18n="midiBridgeStop">Stop bridge</button>
+            </div>
+            <div class="settings-keys" data-side="midi-join">
+              <span class="settings-keys-label" data-i18n="midiBridgeJoin">Phone code</span>
+              <input
+                id="midi-bridge-code"
+                type="text"
+                maxlength="6"
+                autocomplete="off"
+                spellcheck="false"
+                data-i18n-placeholder="midiBridgeCodePh"
+                placeholder="Ab12"
+                style="width: 5.5rem; text-transform: uppercase; letter-spacing: 0.08em"
+              />
+              <button id="midi-bridge-join" type="button" class="ghost" data-i18n="midiBridgeConnect">Connect</button>
+            </div>
+            <p id="midi-bridge-hint" class="hint" data-i18n="midiBridgeHint">
+              On the TV create a code, open PianoSmith on the phone (same server), enter the code, plug the keyboard into the phone.
+            </p>
           </section>
           <section class="settings-section" data-i18n-aria-label="export" aria-label="Export">
             <h3 data-i18n="export">Export</h3>
