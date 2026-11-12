@@ -394,7 +394,10 @@ async function refreshLoopPlayback() {
 function ensurePlayer() {
   if (!player) {
     player = new Player()
-    player.onChange = () => syncUi()
+    player.onChange = () => {
+      syncUi()
+      syncTvScreenSaver()
+    }
     player.setMuted(localStorage.getItem('pianosmith.audio') === '0')
     player.setLoop(localStorage.getItem('pianosmith.loop') === '1')
     player.setSoundSource(soundSource)
@@ -560,6 +563,7 @@ function syncUi() {
   syncLoopUi()
   scrub.disabled = !hasSong || busy
   syncGateDismiss()
+  syncTvScreenSaver()
   if (player?.playing) poke()
 }
 
@@ -1524,6 +1528,46 @@ function escapeTvTextEntry(event: KeyboardEvent): boolean {
 
 function isTizenTv() {
   return typeof (window as Window & { tizen?: unknown }).tizen !== 'undefined'
+}
+
+type SamsungAppCommon = {
+  AppCommonScreenSaverState: { SCREEN_SAVER_ON: number; SCREEN_SAVER_OFF: number }
+  setScreenSaver: (state: number, success?: () => void, error?: (error: unknown) => void) => void
+}
+
+/** Samsung Tizen: keep the panel awake while a song is playing. */
+let tvScreenSaverTimer = 0
+let tvScreenSaverPlaying = false
+
+function setTvScreenSaverAllowed(allow: boolean) {
+  if (!isTizenTv()) return
+  const appcommon = (window as Window & { webapis?: { appcommon?: SamsungAppCommon } }).webapis
+    ?.appcommon
+  const states = appcommon?.AppCommonScreenSaverState
+  if (!appcommon?.setScreenSaver || !states) return
+  const state = allow ? states.SCREEN_SAVER_ON : states.SCREEN_SAVER_OFF
+  try {
+    appcommon.setScreenSaver(state)
+  } catch {
+    /* firmware without appcommon screensaver */
+  }
+}
+
+function syncTvScreenSaver() {
+  const keepAwake = Boolean(player?.playing)
+  if (keepAwake === tvScreenSaverPlaying && (keepAwake ? tvScreenSaverTimer !== 0 : tvScreenSaverTimer === 0)) {
+    return
+  }
+  tvScreenSaverPlaying = keepAwake
+  setTvScreenSaverAllowed(!keepAwake)
+  if (tvScreenSaverTimer) {
+    window.clearInterval(tvScreenSaverTimer)
+    tvScreenSaverTimer = 0
+  }
+  if (keepAwake) {
+    // Some firmwares re-arm the saver; refresh the off state periodically.
+    tvScreenSaverTimer = window.setInterval(() => setTvScreenSaverAllowed(false), 25000)
+  }
 }
 
 function isSmartTvUi() {
