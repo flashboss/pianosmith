@@ -1546,14 +1546,9 @@ let tvScreenSaverTimer = 0
 let tvScreenSaverPlaying = false
 let tvKeepAwakeLastMs = 0
 let tvKeepAwakeVideo: HTMLVideoElement | null = null
-let tvKeepAwakeVideoState = 'idle'
-let tvKeepAwakeHud: HTMLDivElement | null = null
 let tvKeepAwakeCanvas: HTMLCanvasElement | null = null
 let tvKeepAwakeCtx: CanvasRenderingContext2D | null = null
 let tvKeepAwakeRaf = 0
-let tvAwakeLastReport = ''
-let tvAwakeLastSs = ''
-let tvAwakeLastVideo = ''
 
 type TizenWindow = Window & {
   webapis?: { appcommon?: SamsungAppCommon }
@@ -1574,68 +1569,9 @@ function tizenRoot(): TizenWindow {
   return local
 }
 
-function reportTvAwake(info: Record<string, unknown>) {
-  const ss = String(info.screenSaver ?? '?')
-  const vid = String(info.video ?? '?')
-  // Dedupe on meaningful fields only (ignore timestamp / off-sent vs off-ok chatter).
-  const key = `${info.hasWebapis}|${ss}|${info.power}|${vid}|${info.awake}`
-  if (key === tvAwakeLastReport && ss === tvAwakeLastSs && vid === tvAwakeLastVideo) return
-  tvAwakeLastReport = key
-  tvAwakeLastSs = ss
-  tvAwakeLastVideo = vid
-  const line = JSON.stringify({ t: Date.now(), ...info })
-  if (!tvKeepAwakeHud) {
-    const hud = document.createElement('div')
-    hud.id = 'tv-awake-hud'
-    Object.assign(hud.style, {
-      position: 'fixed',
-      right: '12px',
-      bottom: '12px',
-      zIndex: '99999',
-      padding: '8px 10px',
-      borderRadius: '8px',
-      background: 'rgba(0,0,0,0.75)',
-      color: '#9fe870',
-      font: '12px/1.35 ui-monospace, monospace',
-      maxWidth: '46vw',
-      pointerEvents: 'none',
-    })
-    document.body.appendChild(hud)
-    tvKeepAwakeHud = hud
-  }
-  tvKeepAwakeHud.textContent = [
-    `webapis:${info.hasWebapis ? 'yes' : 'NO'}`,
-    `ss:${ss}`,
-    `pwr:${String(info.power ?? '?')}`,
-    `vid:${vid}`,
-  ].join(' · ')
-  try {
-    void fetch('http://192.168.0.81:18765/tv-awake', {
-      method: 'POST',
-      body: line,
-      mode: 'no-cors',
-      keepalive: true,
-    })
-  } catch {
-    /* ignore */
-  }
-}
-
-function tvAwakeSnapshot(extra: Partial<Record<string, unknown>> = {}) {
-  const win = tizenRoot()
-  reportTvAwake({
-    hasWebapis: Boolean(win.webapis?.appcommon?.setScreenSaver),
-    screenSaver: tvAwakeLastSs || '?',
-    power: win.tizen?.power ? 'present' : 'missing',
-    video: tvKeepAwakeVideoState,
-    awake: Boolean(win.__pianosmithKeepAwake),
-    ...extra,
-  })
-}
-
 /** Small corner MP4 — never full-screen (that washed out the whole UI on S90D). */
-function setTvKeepAwakeMedia(awake: boolean): string {
-  if (!isSmartTvUi()) return 'skip'
+function setTvKeepAwakeMedia(awake: boolean) {
+  if (!isSmartTvUi()) return
   if (!awake) {
     if (tvKeepAwakeVideo) {
       try {
@@ -1645,8 +1581,7 @@ function setTvKeepAwakeMedia(awake: boolean): string {
       }
       tvKeepAwakeVideo.style.display = 'none'
     }
-    tvKeepAwakeVideoState = 'paused'
-    return 'paused'
+    return
   }
   if (!tvKeepAwakeVideo) {
     const video = document.createElement('video')
@@ -1671,17 +1606,6 @@ function setTvKeepAwakeMedia(awake: boolean): string {
       zIndex: '3',
       borderRadius: '4px',
     })
-    const mark = (state: string) => {
-      tvKeepAwakeVideoState = state
-      tvAwakeSnapshot({ video: state })
-    }
-    video.addEventListener('playing', () => mark('playing'))
-    video.addEventListener('pause', () => {
-      if (tizenRoot().__pianosmithKeepAwake) mark('paused-bad')
-      else mark('paused')
-    })
-    video.addEventListener('error', () => mark('error'))
-    video.addEventListener('stalled', () => mark('stalled'))
     document.body.appendChild(video)
     tvKeepAwakeVideo = video
   }
@@ -1689,19 +1613,7 @@ function setTvKeepAwakeMedia(awake: boolean): string {
   video.style.display = 'block'
   video.muted = true
   const play = video.play()
-  if (play && typeof play.then === 'function') {
-    void play.then(
-      () => {
-        tvKeepAwakeVideoState = 'playing'
-        tvAwakeSnapshot({ video: 'playing' })
-      },
-      () => {
-        tvKeepAwakeVideoState = 'blocked'
-        tvAwakeSnapshot({ video: 'blocked' })
-      },
-    )
-  }
-  return video.paused ? tvKeepAwakeVideoState || 'starting' : 'playing'
+  if (play && typeof play.catch === 'function') void play.catch(() => undefined)
 }
 
 /**
@@ -1758,15 +1670,10 @@ function setTvKeepAwakeMotion(awake: boolean) {
   if (!tvKeepAwakeRaf) tvKeepAwakeRaf = requestAnimationFrame(paint)
 }
 
-/** AppCommon / power only — used at boot so we never flash keep-awake visuals over the UI. */
-function setTvScreenSaverApi(awake: boolean) {
+function setTvScreenAwake(awake: boolean) {
   const win = tizenRoot()
   win.__pianosmithKeepAwake = awake
   win.__pianosmithScreenOff?.()
-
-  let screenSaver: string = 'n/a'
-  let powerState: string = 'n/a'
-  const hasWebapis = Boolean(win.webapis?.appcommon?.setScreenSaver)
 
   try {
     const appcommon = win.webapis?.appcommon
@@ -1776,50 +1683,30 @@ function setTvScreenSaverApi(awake: boolean) {
       const on = states?.SCREEN_SAVER_ON ?? 1
       appcommon.setScreenSaver(
         awake ? off : on,
-        () => {
-          tvAwakeLastSs = awake ? 'off-ok' : 'on-ok'
-          tvAwakeSnapshot({ screenSaver: tvAwakeLastSs, video: tvKeepAwakeVideoState })
-        },
-        (error) => {
-          tvAwakeLastSs = `err:${(error as { code?: string })?.code ?? 'fail'}`
-          tvAwakeSnapshot({ screenSaver: tvAwakeLastSs, video: tvKeepAwakeVideoState })
-        },
+        () => undefined,
+        () => undefined,
       )
-      screenSaver = awake ? 'off-sent' : 'on-sent'
-      tvAwakeLastSs = screenSaver
-    } else {
-      screenSaver = 'missing'
-      tvAwakeLastSs = screenSaver
     }
-  } catch (error) {
-    screenSaver = `throw:${error instanceof Error ? error.message : 'x'}`
-    tvAwakeLastSs = screenSaver
+  } catch {
+    /* ignore */
   }
 
   try {
     const power = win.tizen?.power
-    if (!power) {
-      powerState = 'missing'
-    } else if (awake) {
-      power.request?.('SCREEN', 'SCREEN_NORMAL')
-      power.setScreenState?.('SCREEN_NORMAL')
-      powerState = 'normal'
-    } else {
-      power.release?.('SCREEN')
-      powerState = 'released'
+    if (power) {
+      if (awake) {
+        power.request?.('SCREEN', 'SCREEN_NORMAL')
+        power.setScreenState?.('SCREEN_NORMAL')
+      } else {
+        power.release?.('SCREEN')
+      }
     }
-  } catch (error) {
-    powerState = `throw:${error instanceof Error ? error.message : 'x'}`
+  } catch {
+    /* ignore */
   }
 
-  return { hasWebapis, screenSaver, powerState }
-}
-
-function setTvScreenAwake(awake: boolean) {
-  const { hasWebapis, screenSaver, powerState } = setTvScreenSaverApi(awake)
-  const video = setTvKeepAwakeMedia(awake)
+  setTvKeepAwakeMedia(awake)
   setTvKeepAwakeMotion(awake)
-  reportTvAwake({ hasWebapis, screenSaver, power: powerState, video, awake })
 }
 
 function syncTvScreenSaver() {
@@ -2406,22 +2293,6 @@ fit()
 syncSeekControls()
 syncUi()
 registerRemote()
-if (isTizenTv()) {
-  // Boot probe: AppCommon only — do not flash keep-awake video/canvas over the UI.
-  const { hasWebapis, screenSaver, powerState } = setTvScreenSaverApi(true)
-  reportTvAwake({ hasWebapis, screenSaver, power: powerState, video: 'boot-api', awake: true })
-  window.setTimeout(() => {
-    if (player?.playing) return
-    const off = setTvScreenSaverApi(false)
-    reportTvAwake({
-      hasWebapis: off.hasWebapis,
-      screenSaver: off.screenSaver,
-      power: off.powerState,
-      video: 'boot-api',
-      awake: false,
-    })
-  }, 1500)
-}
 void refreshLinkServer()
 void refreshLibraryButton()
 
