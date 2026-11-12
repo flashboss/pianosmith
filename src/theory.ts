@@ -496,8 +496,44 @@ function noteImportance(notes: NoteEvent[], index: number): number {
 }
 
 /**
+ * Lengthen held notes at easier levels so the line stays continuous (legato)
+ * instead of sparse disconnected taps after thinning.
+ */
+function sustainForDifficulty(notes: NoteEvent[], level: number): NoteEvent[] {
+  const lv = clampDifficulty(level)
+  if (lv >= 10 || notes.length === 0) return notes
+
+  // 1 at level 0 (full legato), ~0 at level 9.
+  const fill = ((10 - lv) / 10) ** 0.75
+  const minDur = 0.2 + (10 - lv) * 0.055
+  const out = notes.map((note) => ({ ...note, hit: false }))
+
+  for (const hand of ['left', 'right'] as const) {
+    const group = out
+      .map((note, index) => ({ note, index }))
+      .filter(({ note }) => note.hand === hand)
+      .sort((a, b) => a.note.start - b.note.start || a.note.midi - b.note.midi)
+
+    for (let i = 0; i < group.length; i++) {
+      const note = group[i].note
+      const next = group[i + 1]?.note
+      // Hold until the next note of this hand (tiny gap), or a short tail at phrase end.
+      const release = next ? next.start - 0.02 : note.end + 0.2 + fill * 0.65
+      if (release <= note.start + 0.05) continue
+      const floorEnd = Math.min(release, note.start + minDur)
+      const legatoEnd = Math.min(release, Math.max(note.end, floorEnd))
+      // Blend original articulation toward legato as difficulty drops.
+      note.end = note.end * (1 - fill) + legatoEnd * fill
+      if (note.end < note.start + 0.05) note.end = note.start + 0.05
+    }
+  }
+
+  return out
+}
+
+/**
  * Thin a full (level-10) arrangement down to `level` (0–10).
- * Lower levels keep fewer notes, preferring melody, bass, and strong accents.
+ * Lower levels keep fewer notes (melody/bass first) and hold them longer for continuity.
  */
 export function simplifyByDifficulty(notes: NoteEvent[], level: number): NoteEvent[] {
   const lv = clampDifficulty(level)
@@ -534,7 +570,8 @@ export function simplifyByDifficulty(notes: NoteEvent[], level: number): NoteEve
     keep.add(best)
   }
 
-  return notes.filter((_, index) => keep.has(index)).map((note) => ({ ...note, hit: false }))
+  const thinned = notes.filter((_, index) => keep.has(index)).map((note) => ({ ...note, hit: false }))
+  return sustainForDifficulty(thinned, lv)
 }
 
 export function rgba(color: [number, number, number], alpha: number): string {
