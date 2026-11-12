@@ -1569,7 +1569,7 @@ function tizenRoot(): TizenWindow {
   return local
 }
 
-/** Small corner MP4 — never full-screen (that washed out the whole UI on S90D). */
+/** Invisible muted MP4 — media activity for Tizen; pixels stay off-screen so no purple tile. */
 function setTvKeepAwakeMedia(awake: boolean) {
   if (!isSmartTvUi()) return
   if (!awake) {
@@ -1593,18 +1593,17 @@ function setTvKeepAwakeMedia(awake: boolean) {
     video.loop = true
     video.autoplay = true
     video.preload = 'auto'
+    video.setAttribute('aria-hidden', 'true')
     video.src = new URL(`${import.meta.env.BASE_URL}tv-keep-awake.mp4`, window.location.href).toString()
     Object.assign(video.style, {
       position: 'fixed',
-      left: '8px',
-      bottom: '8px',
-      width: '160px',
-      height: '90px',
-      objectFit: 'cover',
-      opacity: '0.35',
+      left: '0',
+      bottom: '0',
+      width: '1px',
+      height: '1px',
+      opacity: '0',
       pointerEvents: 'none',
-      zIndex: '3',
-      borderRadius: '4px',
+      zIndex: '-1',
     })
     document.body.appendChild(video)
     tvKeepAwakeVideo = video
