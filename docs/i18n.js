@@ -15,6 +15,41 @@
       platformsTitle: 'Web, TV, and phone.',
       platformsBody:
         'Run it in the browser, install the Samsung Tizen widget, or build the Android app. Local audio and MIDI work offline; open the hosted app (or your computer’s address) when you need a web link.',
+      newsTitle: 'News',
+      newsIntro: 'Product updates as they ship — tap an item for the full story.',
+      newsBack: '← News',
+      newsMidiTitle: 'MIDI keyboard & wait-for-keys practice',
+      newsMidiLede:
+        'Playback can pause on each chord until you play those keys — on one device, or with the display on a TV and the keyboard on another.',
+      midiDocWhatTitle: 'What it does',
+      midiDocWhatBody:
+        'In Options → Practice, turn on Wait for keys. While a song plays, PianoSmith freezes on each chord until those MIDI notes are held. Difficulty still controls which notes appear. The MIDI button in Options still exports a file; this feature is live keyboard input.',
+      midiDocSameTitle: 'Same device',
+      midiDocSameBody:
+        'Use a browser with Web MIDI (Chrome or Edge on desktop or Android). Safari on iPhone usually cannot read USB MIDI.',
+      midiDocSame1: 'Open PianoSmith and plug in a USB (or compatible) MIDI keyboard.',
+      midiDocSame2: 'Options → Practice → Wait for keys.',
+      midiDocSame3: 'Load a song and press Play. Notes wait until you play the highlighted chord.',
+      midiDocSameNote: 'No bridge code is needed when the keyboard is on the same device as the screen.',
+      midiDocBridgeTitle: 'Display + keyboard on two devices',
+      midiDocBridgeIntro:
+        'Samsung Tizen cannot read a USB MIDI keyboard plugged into the TV. Put the tutorial on the TV (or any display) and send keys from a phone, tablet, or PC that supports Web MIDI.',
+      midiDocBridgeServer:
+        'Both devices must use the same Server — your Railway URL, or http://<lan-host>:5173 while the PianoSmith server is running. The server relays notes between them.',
+      midiDocBridge1:
+        'On the display: home → TV, devices, and server → set Server if needed → Display: create code. Keep the four-character code.',
+      midiDocBridge2:
+        'On the keyboard device: open PianoSmith on that same Server (home is enough; you do not need to load a song) → enter the code → Connect → plug in the MIDI keyboard.',
+      midiDocBridge3:
+        'On the display: Options → Wait for keys → load a song → Play. Playback pauses until the correct keys arrive from the other device.',
+      midiDocBridgeStop:
+        'Stop bridge ends the link on that device. Create/Connect live under TV, devices, and server on the home screen so a keyboard device can join without opening Options.',
+      midiDocTechTitle: 'Technical notes',
+      midiDocTech1: 'Relay API: POST /api/midi/:code for note on/off; GET /api/midi/:code/stream (SSE) on the display.',
+      midiDocTech2: 'POST /api/midi/room creates a short-lived room code on the app server.',
+      midiDocTech3:
+        'Packaged Tizen defaults Server to the hosted Railway app when the widget has no usable page origin.',
+      midiDocReadme: 'README',
       licenseLine: 'MIT License · © 2026 Luca Stancapiano',
       source: 'Source',
       license: 'License',
@@ -33,6 +68,41 @@
       platformsTitle: 'Web, TV e telefono.',
       platformsBody:
         'Usalo nel browser, installa il widget Samsung Tizen o compila l’app Android. Audio e MIDI locali funzionano offline; apri l’app ospitata (o l’indirizzo del computer) quando ti serve un link web.',
+      newsTitle: 'News',
+      newsIntro: 'Aggiornamenti del prodotto man mano che arrivano — tocca una voce per il dettaglio.',
+      newsBack: '← News',
+      newsMidiTitle: 'Tastiera MIDI e modalità aspetta i tasti',
+      newsMidiLede:
+        'Lo scorrimento può fermarsi su ogni accordo finché non suoni quei tasti — sullo stesso dispositivo, o con lo schermo sulla TV e la tastiera su un altro.',
+      midiDocWhatTitle: 'Cosa fa',
+      midiDocWhatBody:
+        'In Opzioni → Studio, attiva Aspetta i tasti. Durante il brano PianoSmith si ferma su ogni accordo finché non tieni quelle note MIDI. La difficoltà continua a scegliere quali note vedere. Il pulsante MIDI in Opzioni esporta ancora un file; questa funzione è l’input live dalla tastiera.',
+      midiDocSameTitle: 'Stesso dispositivo',
+      midiDocSameBody:
+        'Serve un browser con Web MIDI (Chrome o Edge su desktop o Android). Safari su iPhone di solito non legge il MIDI USB.',
+      midiDocSame1: 'Apri PianoSmith e collega una tastiera MIDI USB (o compatibile).',
+      midiDocSame2: 'Opzioni → Studio → Aspetta i tasti.',
+      midiDocSame3: 'Carica un brano e premi Play. Le note aspettano finché non suoni l’accordo indicato.',
+      midiDocSameNote: 'Non serve un codice ponte se tastiera e schermo sono sullo stesso dispositivo.',
+      midiDocBridgeTitle: 'Schermo + tastiera su due dispositivi',
+      midiDocBridgeIntro:
+        'Samsung Tizen non legge una tastiera MIDI USB collegata alla TV. Metti il tutorial sulla TV (o su un altro schermo) e invia i tasti da telefono, tablet o PC con Web MIDI.',
+      midiDocBridgeServer:
+        'Entrambi i dispositivi devono usare lo stesso Server — l’URL Railway, oppure http://<host-lan>:5173 mentre il server PianoSmith è in esecuzione. Il server inoltra le note.',
+      midiDocBridge1:
+        'Sul display: home → TV, dispositivi e server → imposta Server se serve → Schermo: crea codice. Annota il codice di quattro caratteri.',
+      midiDocBridge2:
+        'Sul dispositivo con la tastiera: apri PianoSmith sullo stesso Server (basta la home; non serve caricare un brano) → inserisci il codice → Collega → collega la tastiera MIDI.',
+      midiDocBridge3:
+        'Sul display: Opzioni → Aspetta i tasti → carica un brano → Play. Lo scorrimento si ferma finché non arrivano i tasti giusti dall’altro dispositivo.',
+      midiDocBridgeStop:
+        'Ferma ponte chiude il collegamento su quel dispositivo. Crea/Collega stanno sotto TV, dispositivi e server nella home, così il dispositivo tastiera può unirsi senza aprire Opzioni.',
+      midiDocTechTitle: 'Note tecniche',
+      midiDocTech1: 'API di relay: POST /api/midi/:code per note on/off; GET /api/midi/:code/stream (SSE) sul display.',
+      midiDocTech2: 'POST /api/midi/room crea un codice stanza temporaneo sul server dell’app.',
+      midiDocTech3:
+        'Il widget Tizen usa di default il Server Railway quando non ha un origin di pagina utilizzabile.',
+      midiDocReadme: 'README',
       licenseLine: 'Licenza MIT · © 2026 Luca Stancapiano',
       source: 'Sorgente',
       license: 'Licenza',
@@ -51,6 +121,12 @@
       platformsTitle: 'Web, TV et téléphone.',
       platformsBody:
         'Lancez-le dans le navigateur, installez le widget Samsung Tizen ou compilez l’app Android. Audio et MIDI locaux fonctionnent hors ligne ; ouvrez l’app hébergée (ou l’adresse de l’ordinateur) pour un lien web.',
+      newsTitle: 'Actualités',
+      newsIntro: 'Mises à jour du produit au fil du temps — touchez un élément pour le détail.',
+      newsBack: '← Actualités',
+      newsMidiTitle: 'Clavier MIDI et mode attendre les touches',
+      newsMidiLede:
+        'La lecture peut s’arrêter sur chaque accord jusqu’à ce que vous jouiez ces touches — sur un seul appareil, ou avec l’écran sur une TV et le clavier sur un autre.',
       licenseLine: 'Licence MIT · © 2026 Luca Stancapiano',
       source: 'Code source',
       license: 'Licence',
@@ -69,6 +145,12 @@
       platformsTitle: 'Web, TV y teléfono.',
       platformsBody:
         'Úsalo en el navegador, instala el widget Samsung Tizen o compila la app Android. El audio y MIDI locales funcionan sin conexión; abre la app alojada (o la dirección del ordenador) cuando necesites un enlace web.',
+      newsTitle: 'Novedades',
+      newsIntro: 'Actualizaciones del producto a medida que llegan — toca un elemento para el detalle.',
+      newsBack: '← Novedades',
+      newsMidiTitle: 'Teclado MIDI y modo esperar teclas',
+      newsMidiLede:
+        'La reproducción puede pausarse en cada acorde hasta que toques esas teclas — en un solo dispositivo, o con la pantalla en la TV y el teclado en otro.',
       licenseLine: 'Licencia MIT · © 2026 Luca Stancapiano',
       source: 'Código',
       license: 'Licencia',
@@ -87,6 +169,12 @@
       platformsTitle: 'Web, TV und Telefon.',
       platformsBody:
         'Im Browser starten, das Samsung-Tizen-Widget installieren oder die Android-App bauen. Lokales Audio und MIDI funktionieren offline; für Weblinks die gehostete App (oder die Adresse des Computers) öffnen.',
+      newsTitle: 'Neuigkeiten',
+      newsIntro: 'Produkt-Updates nach und nach — tippe auf einen Eintrag für die Details.',
+      newsBack: '← Neuigkeiten',
+      newsMidiTitle: 'MIDI-Tastatur und Warten-auf-Tasten',
+      newsMidiLede:
+        'Die Wiedergabe kann bei jedem Akkord pausieren, bis du diese Tasten spielst — auf einem Gerät, oder mit dem Display auf dem TV und der Tastatur auf einem anderen.',
       licenseLine: 'MIT-Lizenz · © 2026 Luca Stancapiano',
       source: 'Quellcode',
       license: 'Lizenz',
@@ -104,6 +192,12 @@
       platformsTitle: '网页、电视与手机。',
       platformsBody:
         '在浏览器中运行、安装三星 Tizen 组件，或构建 Android 应用。本地音频与 MIDI 可离线使用；需要网页链接时打开托管应用（或电脑地址）。',
+      newsTitle: '动态',
+      newsIntro: '产品更新会陆续发布——点开条目查看详情。',
+      newsBack: '← 动态',
+      newsMidiTitle: 'MIDI 键盘与等待按键练习',
+      newsMidiLede:
+        '播放可在每个和弦处暂停，直到你按下对应键——可在同一设备上，也可把画面放在电视、键盘接在另一设备上。',
       licenseLine: 'MIT 许可证 · © 2026 Luca Stancapiano',
       source: '源码',
       license: '许可证',
@@ -121,6 +215,12 @@
       platformsTitle: 'Web・TV・スマホ。',
       platformsBody:
         'ブラウザで動かす、Samsung Tizen ウィジェットを入れる、または Android アプリをビルド。ローカルの音声と MIDI はオフラインで使え、Web リンクが必要なときはホストされたアプリ（または PC のアドレス）を開きます。',
+      newsTitle: 'ニュース',
+      newsIntro: '製品の更新を随時掲載 — 項目を開くと詳細が見られます。',
+      newsBack: '← ニュース',
+      newsMidiTitle: 'MIDI キーボードとキー待ち練習',
+      newsMidiLede:
+        '各和音で再生を止め、正しいキーを弾くまで待てます — 同じ端末でも、画面を TV・キーボードを別端末でも。',
       licenseLine: 'MIT ライセンス · © 2026 Luca Stancapiano',
       source: 'ソース',
       license: 'ライセンス',
@@ -156,17 +256,25 @@
   function apply() {
     const locale = detectLocale()
     const table = TABLES[locale] || TABLES.en
+    const en = TABLES.en
     document.documentElement.lang = locale === 'zh' ? 'zh-Hans' : locale
 
     document.querySelectorAll('[data-i18n]').forEach((node) => {
       const key = node.getAttribute('data-i18n')
-      if (key && table[key]) node.textContent = table[key]
+      if (!key) return
+      const text = table[key] || en[key]
+      if (text) node.textContent = text
     })
 
     const desc = document.querySelector('meta[name="description"]')
-    if (desc) desc.setAttribute('content', table.description)
+    if (desc) desc.setAttribute('content', table.description || en.description)
     const og = document.querySelector('meta[property="og:description"]')
-    if (og) og.setAttribute('content', table.ogDescription)
+    if (og) og.setAttribute('content', table.ogDescription || en.ogDescription)
+
+    const titleKey = document.body.getAttribute('data-i18n-title')
+    if (titleKey && (table[titleKey] || en[titleKey])) {
+      document.title = `${table[titleKey] || en[titleKey]} — PianoSmith`
+    }
   }
 
   if (document.readyState === 'loading') {

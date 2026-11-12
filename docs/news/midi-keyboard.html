@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#050505" />
+    <meta
+      name="description"
+      content="PianoSmith wait-for-keys practice and MIDI keyboard bridge — same device or TV plus another Web MIDI client."
+    />
+    <meta property="og:title" content="MIDI keyboard practice — PianoSmith" />
+    <meta
+      property="og:description"
+      content="Pause on each chord until you play the right keys. Use a local MIDI keyboard or bridge a display device to another."
+    />
+    <meta property="og:image" content="https://pianosmith.vige.it/hero-piano.jpg" />
+    <title>MIDI keyboard practice — PianoSmith</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../styles.css" />
+    <script src="../i18n.js" defer></script>
+  </head>
+  <body class="article-page" data-i18n-title="newsMidiTitle">
+    <header class="article-top">
+      <a class="brand-link" href="../">PianoSmith</a>
+      <a class="back-link" href="../#news" data-i18n="newsBack">← News</a>
+    </header>
+
+    <main class="article">
+      <p class="article-meta">
+        <time datetime="2026-11-12">12 Nov 2026</time>
+      </p>
+      <h1 data-i18n="newsMidiTitle">MIDI keyboard &amp; wait-for-keys practice</h1>
+      <p class="lede" data-i18n="newsMidiLede">
+        Playback can pause on each chord until you play those keys — on one device, or with the display on a TV and the keyboard on another.
+      </p>
+
+      <section>
+        <h2 data-i18n="midiDocWhatTitle">What it does</h2>
+        <p data-i18n="midiDocWhatBody">
+          In Options → Practice, turn on Wait for keys. While a song plays, PianoSmith freezes on each chord until those MIDI notes are held. Difficulty still controls which notes appear. The MIDI button in Options still exports a file; this feature is live keyboard input.
+        </p>
+      </section>
+
+      <section>
+        <h2 data-i18n="midiDocSameTitle">Same device</h2>
+        <p data-i18n="midiDocSameBody">
+          Use a browser with Web MIDI (Chrome or Edge on desktop or Android). Safari on iPhone usually cannot read USB MIDI.
+        </p>
+        <ol>
+          <li data-i18n="midiDocSame1">Open PianoSmith and plug in a USB (or compatible) MIDI keyboard.</li>
+          <li data-i18n="midiDocSame2">Options → Practice → Wait for keys.</li>
+          <li data-i18n="midiDocSame3">Load a song and press Play. Notes wait until you play the highlighted chord.</li>
+        </ol>
+        <p data-i18n="midiDocSameNote">No bridge code is needed when the keyboard is on the same device as the screen.</p>
+      </section>
+
+      <section>
+        <h2 data-i18n="midiDocBridgeTitle">Display + keyboard on two devices</h2>
+        <p data-i18n="midiDocBridgeIntro">
+          Samsung Tizen cannot read a USB MIDI keyboard plugged into the TV. Put the tutorial on the TV (or any display) and send keys from a phone, tablet, or PC that supports Web MIDI.
+        </p>
+        <p data-i18n="midiDocBridgeServer">
+          Both devices must use the same Server — your Railway URL, or http://&lt;lan-host&gt;:5173 while the PianoSmith server is running. The server relays notes between them.
+        </p>
+        <ol>
+          <li data-i18n="midiDocBridge1">
+            On the display: home → TV, devices, and server → set Server if needed → Display: create code. Keep the four-character code.
+          </li>
+          <li data-i18n="midiDocBridge2">
+            On the keyboard device: open PianoSmith on that same Server (home is enough; you do not need to load a song) → enter the code → Connect → plug in the MIDI keyboard.
+          </li>
+          <li data-i18n="midiDocBridge3">
+            On the display: Options → Wait for keys → load a song → Play. Playback pauses until the correct keys arrive from the other device.
+          </li>
+        </ol>
+        <p data-i18n="midiDocBridgeStop">
+          Stop bridge ends the link on that device. Create/Connect live under TV, devices, and server on the home screen so a keyboard device can join without opening Options.
+        </p>
+      </section>
+
+      <section>
+        <h2 data-i18n="midiDocTechTitle">Technical notes</h2>
+        <ul>
+          <li data-i18n="midiDocTech1">Relay API: POST /api/midi/:code for note on/off; GET /api/midi/:code/stream (SSE) on the display.</li>
+          <li data-i18n="midiDocTech2">POST /api/midi/room creates a short-lived room code on the app server.</li>
+          <li data-i18n="midiDocTech3">Packaged Tizen defaults Server to the hosted Railway app when the widget has no usable page origin.</li>
+        </ul>
+      </section>
+
+      <p class="article-cta">
+        <a class="btn primary" href="https://pianosmith-production.up.railway.app/" data-i18n="getStarted">Get started</a>
+        <a class="btn ghost" href="https://github.com/flashboss/pianosmith/blob/main/README.md#midi-practice-and-keyboard-bridge" data-i18n="midiDocReadme">README</a>
+      </p>
+    </main>
+
+    <footer>
+      <p data-i18n="licenseLine">MIT License · © 2026 Luca Stancapiano</p>
+      <p>
+        <a href="https://github.com/flashboss/pianosmith" data-i18n="source">Source</a>
+        ·
+        <a href="https://github.com/flashboss/pianosmith/blob/main/LICENSE" data-i18n="license">License</a>
+      </p>
+    </footer>
+  </body>
+</html>

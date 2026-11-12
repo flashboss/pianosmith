@@ -76,7 +76,7 @@ That requires the Tizen Studio CLI (`tizen`, `sdb`) and a TV certificate profile
 
 The package id is `PianoSmith` and the app id is `PianoSmith.player`.
 
-A USB MIDI keyboard plugged into the TV is **not** readable by the Tizen web app (no Web MIDI). Use the [MIDI practice bridge](#midi-practice-and-keyboard-bridge) below: the TV displays, another device sends the keys.
+A USB MIDI keyboard plugged into the TV is **not** readable by the Tizen web app (no Web MIDI). Use the [MIDI practice bridge](#midi-practice-and-keyboard-bridge) below: the TV displays, another device sends the keys. The public site also has a [news article](https://pianosmith.vige.it/news/midi-keyboard.html) with the same setup guide.
 
 ## MIDI practice and keyboard bridge
 
