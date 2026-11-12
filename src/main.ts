@@ -242,7 +242,7 @@ let difficulty = clampDifficulty(Number(localStorage.getItem('pianosmith.difficu
 let practiceWait = localStorage.getItem('pianosmith.practiceWait') === '1'
 const midiInput = new MidiInput()
 const midiBridge = new MidiBridge()
-let midiBridgeMode: 'off' | 'tv' | 'phone' = 'off'
+let midiBridgeMode: 'off' | 'tv' | 'device' = 'off'
 let midiBridgeStatusKey = 'midiBridgeIdle'
 
 {
@@ -422,7 +422,7 @@ function ensurePlayer() {
 
 function onMidiActivity(midi: number, on: boolean, velocity: number) {
   ensurePlayer().midiNote(midi, on)
-  if (midiBridgeMode === 'phone') void midiBridge.send(midi, on, velocity)
+  if (midiBridgeMode === 'device') void midiBridge.send(midi, on, velocity)
 }
 
 function syncPracticeUi() {
@@ -441,8 +441,8 @@ function syncPracticeUi() {
     midiBridgeStatusEl.textContent = t('midiBridgeReady', { code: midiBridge.code })
     return
   }
-  if (midiBridgeMode === 'phone' && midiBridge.code) {
-    midiBridgeStatusEl.textContent = t('midiBridgePhone', { code: midiBridge.code })
+  if (midiBridgeMode === 'device' && midiBridge.code) {
+    midiBridgeStatusEl.textContent = t('midiBridgeDevice', { code: midiBridge.code })
     return
   }
   midiBridgeStatusEl.textContent = t(midiBridgeStatusKey)
@@ -1451,7 +1451,7 @@ midiBridgeJoinBtn.addEventListener('click', () => {
     const code = midiBridgeCodeInput.value.trim().toUpperCase()
     if (code.length < 4) return
     midiBridge.joinRoom(code)
-    midiBridgeMode = 'phone'
+    midiBridgeMode = 'device'
     midiInput.onNotes(onMidiActivity)
     const midiStatus = await midiInput.start()
     if (midiStatus === 'unsupported' || midiStatus === 'denied') {
