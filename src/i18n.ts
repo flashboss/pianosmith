@@ -55,7 +55,8 @@ const it: Dict = {
   keysLeftMore: 'Aggiungi tasto a sinistra',
   keysRightFewer: 'Togli tasto a destra',
   keysRightMore: 'Aggiungi tasto a destra',
-  keysHint: 'Con −/+ su ciascun lato togli o aggiungi tasti dai gravi (sinistra) o dalle acute (destra).',
+  keysHint:
+    'Con −/+ su ciascun lato togli o aggiungi tasti dai gravi (sinistra, fino al Do grave) o dalle acute (destra).',
   keysHintZoom: 'Disattiva Zoom per cambiare il numero di tasti.',
   audioOn: 'Audio acceso',
   audioOff: 'Audio spento',
@@ -217,7 +218,8 @@ const en: Dict = {
   keysLeftMore: 'Add left key',
   keysRightFewer: 'Remove right key',
   keysRightMore: 'Add right key',
-  keysHint: 'Use −/+ on each side to remove or add keys from the bass (left) or treble (right).',
+  keysHint:
+    'Use −/+ on each side to remove or add keys from the bass (left, down to low C) or treble (right).',
   keysHintZoom: 'Turn off Zoom to change the number of keys.',
   audioOn: 'Audio on',
   audioOff: 'Audio off',

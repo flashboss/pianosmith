@@ -43,14 +43,19 @@ export function whiteIndex(midi: number): number {
   return WHITE_INDEX[m] - WHITE_INDEX[A0]
 }
 
+const C0 = 12
 const WHITE_MIDIS: number[] = []
-for (let midi = A0; midi <= 108; midi++) {
+for (let midi = C0; midi <= 108; midi++) {
   if (!BLACK.has(midi % 12)) WHITE_MIDIS.push(midi)
 }
 
-/** MIDI note for a white-key index relative to A0 (clamped to the keyboard). */
+/**
+ * MIDI note for a white-key index relative to A0 (clamped to C0…C8 whites).
+ * Index 0 is still A0; negative indices reach down toward C0.
+ */
 export function midiAtWhiteIndex(index: number): number {
-  const i = Math.max(0, Math.min(WHITE_MIDIS.length - 1, Math.round(index)))
+  const a0White = WHITE_MIDIS.indexOf(A0)
+  const i = Math.max(0, Math.min(WHITE_MIDIS.length - 1, Math.round(index) + a0White))
   return WHITE_MIDIS[i]
 }
 

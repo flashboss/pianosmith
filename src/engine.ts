@@ -48,8 +48,12 @@ interface Layout {
 const LOOKAHEAD = 3.15
 /** Hands may cross briefly; after this, notes are re-split left/low · right/high. */
 const MAX_HAND_CROSS_SEC = 0.28
-/** Full piano: A0 (21) … C8 (108). Visible range keeps the left edge and trims from the right. */
-export const KEYBOARD_MIN_MIDI = 21
+/**
+ * Visible keyboard may extend from C0 (12) … C8 (108).
+ * Default left edge stays A0 (21); + on the bass side can grow left down to C0 (Do).
+ */
+export const KEYBOARD_MIN_MIDI = 12
+export const KEYBOARD_DEFAULT_LO = 21
 export const KEYBOARD_MAX_MIDI = 108
 export const KEYBOARD_MIN_KEYS = 25
 export const KEYBOARD_MAX_KEYS = KEYBOARD_MAX_MIDI - KEYBOARD_MIN_MIDI + 1
@@ -469,13 +473,13 @@ export class Visualizer {
   private showNames = false
   private showHands = true
   private zoom = false
-  private keyLo = KEYBOARD_MIN_MIDI
-  private keyHi = KEYBOARD_MIN_MIDI + KEYBOARD_DEFAULT_KEYS - 1
+  private keyLo = KEYBOARD_DEFAULT_LO
+  private keyHi = KEYBOARD_DEFAULT_LO + KEYBOARD_DEFAULT_KEYS - 1
   private w = 1280
   private h = 720
   private keyboardTop = 500
-  private camLo = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MIN_MIDI + KEYBOARD_DEFAULT_KEYS - 1).lo
-  private camHi = cameraBounds(KEYBOARD_MIN_MIDI, KEYBOARD_MIN_MIDI + KEYBOARD_DEFAULT_KEYS - 1).hi
+  private camLo = cameraBounds(KEYBOARD_DEFAULT_LO, KEYBOARD_DEFAULT_LO + KEYBOARD_DEFAULT_KEYS - 1).lo
+  private camHi = cameraBounds(KEYBOARD_DEFAULT_LO, KEYBOARD_DEFAULT_LO + KEYBOARD_DEFAULT_KEYS - 1).hi
   private camReady = false
   private prev = -1
   private sparks: Spark[] = []
@@ -521,7 +525,7 @@ export class Visualizer {
   /** Default span: A0 plus DEFAULT_KEYS − 1 toward the treble. */
   setKeyCount(count: number) {
     const n = Math.max(KEYBOARD_MIN_KEYS, Math.min(KEYBOARD_MAX_KEYS, Math.round(count)))
-    this.setKeyRange(KEYBOARD_MIN_MIDI, KEYBOARD_MIN_MIDI + n - 1)
+    this.setKeyRange(KEYBOARD_DEFAULT_LO, KEYBOARD_DEFAULT_LO + n - 1)
   }
 
   /**

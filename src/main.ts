@@ -11,7 +11,7 @@ import {
   type SearchVideo,
 } from './api'
 import { demoNotes } from './demo'
-import { KEYBOARD_DEFAULT_KEYS, Visualizer } from './engine'
+import { KEYBOARD_DEFAULT_KEYS, KEYBOARD_MAX_MIDI, KEYBOARD_MIN_MIDI, Visualizer } from './engine'
 import {
   ROOT_FOLDER_ID,
   countLibrarySongs,
@@ -272,8 +272,8 @@ zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
   if (
     Number.isFinite(savedLo) &&
     Number.isFinite(savedHi) &&
-    savedLo >= 21 &&
-    savedHi <= 108 &&
+    savedLo >= KEYBOARD_MIN_MIDI &&
+    savedHi <= KEYBOARD_MAX_MIDI &&
     savedHi >= savedLo
   ) {
     viz.setKeyRange(savedLo, savedHi)
