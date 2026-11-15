@@ -2,7 +2,7 @@
 /**
  * Export YouTube-related cookies from a local browser for remote PianoSmith hosts.
  *
- * Full browser dumps are huge and often exceed Railway variable size limits, so this
+ * Full browser dumps are huge and often exceed cloud secret size limits, so this
  * script keeps only domains yt-dlp needs for YouTube (not Gmail/Drive/Meet/etc.).
  *
  * Usage:
@@ -11,7 +11,7 @@
  *   npm run cookies:export -- firefox
  *   npm run cookies:export -- safari
  *
- * Prefer YTDLP_COOKIES_B64 on Railway (see yt-cookies.b64).
+ * Prefer YTDLP_COOKIES_B64 on Cloud Run (see yt-cookies.b64).
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
@@ -102,9 +102,9 @@ const bytes = Buffer.byteLength(filtered)
 const kb = (bytes / 1024).toFixed(1)
 console.log(`
 Wrote ${out} (${kb} KB, ${cookieLines} cookie lines — youtube hosts only, no .google.com)
-Wrote ${b64Path} (single-line Base64 for Railway Variables)
+Wrote ${b64Path} (single-line Base64 for Cloud Run / secret env)
 
-Recommended on Railway:
+Recommended on Cloud Run:
   1. Delete any broken YTDLP_COOKIES multiline variable
   2. Add YTDLP_COOKIES_B64 = contents of yt-cookies.b64 (one line, paste works)
   3. Redeploy / restart

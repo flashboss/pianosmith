@@ -1,12 +1,11 @@
-# PianoSmith production image for remote hosts (Railway, Fly, a VPS, etc.).
+# PianoSmith production image for Google Cloud Run (or Fly, a VPS, etc.).
 #
 # Local `npm run dev` expects yt-dlp and ffmpeg on the machine. On a cloud host
 # those tools are usually missing, so this Dockerfile installs them, builds the
 # Vite app, and runs the Node server that serves the UI and `/api/link`.
 #
-# Use this file as the build source on the remote platform (e.g. Railway
-# Dockerfile builder). Do not use GitHub Pages for this role — Pages is static
-# only and cannot run yt-dlp.
+# Use this file as the build source on Cloud Run. Do not use GitHub Pages for
+# this role — Pages is static only and cannot run yt-dlp.
 #
 # Optional: if YouTube blocks the host IP, set YTDLP_COOKIES (filtered Netscape
 # cookies.txt from `npm run cookies:export`), YTDLP_COOKIES_URL, or YTDLP_COOKIES_FILE.

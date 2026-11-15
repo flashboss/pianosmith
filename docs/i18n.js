@@ -36,7 +36,7 @@
       midiDocBridgeIntro:
         'Samsung Tizen cannot read a USB MIDI keyboard plugged into the TV. Put the tutorial on the TV (or any display) and send keys from a phone, tablet, or PC that supports Web MIDI.',
       midiDocBridgeServer:
-        'Both devices must use the same Server — your Railway URL, or http://<lan-host>:5173 while the PianoSmith server is running. The server relays notes between them.',
+        'Both devices must use the same Server — your Cloud Run URL, or http://<lan-host>:5173 while the PianoSmith server is running. The server relays notes between them.',
       midiDocBridge1:
         'On the display: home → TV, devices, and server → set Server if needed → Display: create code. Keep the four-character code.',
       midiDocBridge2:
@@ -49,7 +49,7 @@
       midiDocTech1: 'Relay API: POST /api/midi/:code for note on/off; GET /api/midi/:code/stream (SSE) on the display.',
       midiDocTech2: 'POST /api/midi/room creates a short-lived room code on the app server.',
       midiDocTech3:
-        'Packaged Tizen defaults Server to the hosted Railway app when the widget has no usable page origin.',
+        'Packaged Tizen defaults Server to the hosted Cloud Run app when the widget has no usable page origin.',
       midiDocReadme: 'README',
       licenseLine: 'MIT License · © 2026 Luca Stancapiano',
       source: 'Source',
@@ -90,7 +90,7 @@
       midiDocBridgeIntro:
         'Samsung Tizen non legge una tastiera MIDI USB collegata alla TV. Metti il tutorial sulla TV (o su un altro schermo) e invia i tasti da telefono, tablet o PC con Web MIDI.',
       midiDocBridgeServer:
-        'Entrambi i dispositivi devono usare lo stesso Server — l’URL Railway, oppure http://<host-lan>:5173 mentre il server PianoSmith è in esecuzione. Il server inoltra le note.',
+        'Entrambi i dispositivi devono usare lo stesso Server — l’URL Cloud Run, oppure http://<host-lan>:5173 mentre il server PianoSmith è in esecuzione. Il server inoltra le note.',
       midiDocBridge1:
         'Sul display: home → TV, dispositivi e server → imposta Server se serve → Schermo: crea codice. Annota il codice di quattro caratteri.',
       midiDocBridge2:
@@ -103,7 +103,7 @@
       midiDocTech1: 'API di relay: POST /api/midi/:code per note on/off; GET /api/midi/:code/stream (SSE) sul display.',
       midiDocTech2: 'POST /api/midi/room crea un codice stanza temporaneo sul server dell’app.',
       midiDocTech3:
-        'Il widget Tizen usa di default il Server Railway quando non ha un origin di pagina utilizzabile.',
+        'Il widget Tizen usa di default il Server Cloud Run quando non ha un origin di pagina utilizzabile.',
       midiDocReadme: 'README',
       licenseLine: 'Licenza MIT · © 2026 Luca Stancapiano',
       source: 'Sorgente',

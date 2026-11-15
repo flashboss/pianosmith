@@ -66,7 +66,7 @@
           Samsung Tizen cannot read a USB MIDI keyboard plugged into the TV. Put the tutorial on the TV (or any display) and send keys from a phone, tablet, or PC that supports Web MIDI.
         </p>
         <p data-i18n="midiDocBridgeServer">
-          Both devices must use the same Server — your Railway URL, or http://&lt;lan-host&gt;:5173 while the PianoSmith server is running. The server relays notes between them.
+          Both devices must use the same Server — your Cloud Run URL, or http://&lt;lan-host&gt;:5173 while the PianoSmith server is running. The server relays notes between them.
         </p>
         <ol>
           <li data-i18n="midiDocBridge1">
@@ -89,12 +89,12 @@
         <ul>
           <li data-i18n="midiDocTech1">Relay API: POST /api/midi/:code for note on/off; GET /api/midi/:code/stream (SSE) on the display.</li>
           <li data-i18n="midiDocTech2">POST /api/midi/room creates a short-lived room code on the app server.</li>
-          <li data-i18n="midiDocTech3">Packaged Tizen defaults Server to the hosted Railway app when the widget has no usable page origin.</li>
+          <li data-i18n="midiDocTech3">Packaged Tizen defaults Server to the hosted Cloud Run app when the widget has no usable page origin.</li>
         </ul>
       </section>
 
       <p class="article-cta">
-        <a class="btn primary" href="https://pianosmith-production.up.railway.app/" data-i18n="getStarted">Get started</a>
+        <a class="btn primary" href="https://pianosmith-40961844406.europe-west1.run.app/" data-i18n="getStarted">Get started</a>
         <a class="btn ghost" href="https://github.com/flashboss/pianosmith/blob/main/README.md#midi-practice-and-keyboard-bridge" data-i18n="midiDocReadme">README</a>
       </p>
     </main>

@@ -307,7 +307,7 @@ let cookiesReady = null
 let cookiesMeta = { source: null, bytes: 0, ok: false, error: null }
 
 /**
- * Railway / UI env vars often flatten newlines or store literal \n / \t.
+ * Cloud / UI env vars often flatten newlines or store literal \n / \t.
  * Netscape cookies need real newlines and tabs.
  */
 function recoverNetscapeLine(line) {
@@ -370,7 +370,7 @@ function writeCookiesFile(raw, source) {
 /**
  * Resolve cookies for yt-dlp (first match wins):
  * YTDLP_COOKIES_B64 → YTDLP_COOKIES_FILE → YTDLP_COOKIES_URL → YTDLP_COOKIES
- * Base64 is preferred because Railway multiline Variables corrupt Netscape tabs.
+ * Base64 is preferred because multiline secret UIs often corrupt Netscape tabs.
  */
 async function ensureYoutubeCookiesArgs() {
   if (cookiesReady) return cookiesReady
@@ -402,7 +402,7 @@ async function ensureYoutubeCookiesArgs() {
       if (raw) {
         if (!envCookiesTrustworthy(raw)) {
           throw new Error(
-            'YTDLP_COOKIES è corrotto (Railway spezza TAB/newline). Eliminalo e usa YTDLP_COOKIES_B64 da npm run cookies:export.',
+            'YTDLP_COOKIES è corrotto (TAB/newline spezzati dall’env). Eliminalo e usa YTDLP_COOKIES_B64 da npm run cookies:export.',
           )
         }
         return ['--cookies', writeCookiesFile(raw, 'env')]
@@ -440,7 +440,7 @@ async function downloadYouTube(url, titleOverride) {
       '--restrict-filenames',
       '--match-filter',
       'duration < 600',
-      // Cloud hosts (Railway, etc.) are often blocked on the web client; android/ios
+      // Cloud hosts (Cloud Run, etc.) are often blocked on the web client; android/ios
       // plus a JS runtime for YouTube challenges work more reliably.
       '--js-runtimes',
       'node',
@@ -493,7 +493,7 @@ function friendly(error) {
   if (/Cookie YouTube non validi|YTDLP_COOKIES|does not look like a Netscape/i.test(text)) {
     return text.includes('YTDLP_COOKIES_B64') || text.includes('yt-cookies.b64')
       ? text.slice(0, 240)
-      : 'Cookie YouTube non validi su Railway. Elimina YTDLP_COOKIES, riesegui npm run cookies:export e imposta solo YTDLP_COOKIES_B64 (contenuto di yt-cookies.b64).'
+      : 'Cookie YouTube non validi sul server. Elimina YTDLP_COOKIES, riesegui npm run cookies:export e imposta solo YTDLP_COOKIES_B64 (contenuto di yt-cookies.b64).'
   }
   if (/proxy|tunnel connection failed/i.test(text)) {
     return 'Proxy non raggiungibile. Controlla YTDLP_PROXY / HTTPS_PROXY.'

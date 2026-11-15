@@ -77,7 +77,7 @@ export function linkSourceName(input: string): string {
   return host
 }
 
-const FALLBACK_SERVER = 'https://pianosmith-production.up.railway.app'
+const FALLBACK_SERVER = 'https://pianosmith-40961844406.europe-west1.run.app'
 
 export function defaultServerOrigin(): string {
   try {
@@ -103,7 +103,7 @@ function isLoopbackHost(value: string): boolean {
 export function serverBase(): string {
   const saved = (localStorage.getItem('pianosmith.server') || '').trim().replace(/\/$/, '')
   if (!saved) return defaultServerOrigin()
-  // Ignore a stale localhost saved while using a remote deploy (Railway, LAN IP, …).
+  // Ignore a stale localhost saved while using a remote deploy (Cloud Run, LAN IP, …).
   if (isLoopbackHost(saved) && !isLoopbackHost(defaultServerOrigin())) return defaultServerOrigin()
   return saved
 }
