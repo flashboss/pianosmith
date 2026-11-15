@@ -3,6 +3,8 @@ dist
 tizen-app
 yt-cookies.txt
 yt-cookies.b64
+.env
+.env.local
 *.cookies.txt
 public/model
 .DS_Store

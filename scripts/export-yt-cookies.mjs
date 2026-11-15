@@ -10,16 +10,60 @@
  *   npm run cookies:export -- chrome
  *   npm run cookies:export -- firefox
  *   npm run cookies:export -- safari
+ *   npm run cookies:export -- remote
+ *   npm run cookies:export -- chrome remote
  *
  * Prefer YTDLP_COOKIES_B64 on Cloud Run (see yt-cookies.b64).
+ * With `remote`, uploads yt-cookies.b64 to Secret Manager via gcloud using `.env`.
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const browser = (process.argv[2] || 'chrome').toLowerCase()
-const out = path.resolve('yt-cookies.txt')
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const allowed = new Set(['chrome', 'chromium', 'firefox', 'safari', 'edge', 'brave', 'opera'])
+
+function loadEnvFile(filePath) {
+  if (!existsSync(filePath)) return {}
+  const env = {}
+  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const key = trimmed.slice(0, eq).trim()
+    let value = trimmed.slice(eq + 1).trim()
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1)
+    }
+    env[key] = value
+  }
+  return env
+}
+
+function parseArgs(argv) {
+  let browser = 'chrome'
+  let remote = false
+  for (const arg of argv) {
+    const lower = arg.toLowerCase()
+    if (lower === 'remote' || lower === '--remote') {
+      remote = true
+      continue
+    }
+    if (allowed.has(lower)) {
+      browser = lower
+      continue
+    }
+    console.error(`Unknown argument "${arg}". Use a browser name and/or remote.`)
+    console.error(`Browsers: ${[...allowed].join(', ')}`)
+    process.exit(1)
+  }
+  return { browser, remote }
+}
 
 /**
  * Keep only YouTube-related hosts (trial without .google.com auth cookies).
@@ -37,6 +81,63 @@ function keepHost(domainField) {
   return false
 }
 
+function uploadSecretB64(b64Path, fileEnv) {
+  const project =
+    fileEnv.GCLOUD_PROJECT ||
+    process.env.GCLOUD_PROJECT ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    ''
+  const secret =
+    fileEnv.GCLOUD_SECRET_YTDLP_COOKIES_B64 ||
+    process.env.GCLOUD_SECRET_YTDLP_COOKIES_B64 ||
+    'YTDLP_COOKIES_B64'
+
+  if (!project) {
+    console.error(
+      'Missing GCLOUD_PROJECT. Add it to .env (see .env.example) before using remote.',
+    )
+    process.exit(1)
+  }
+
+  const gcloudProbe = spawnSync('gcloud', ['--version'], { encoding: 'utf8' })
+  if (gcloudProbe.error || gcloudProbe.status !== 0) {
+    console.error('gcloud CLI not found. Install Google Cloud SDK and run gcloud auth login.')
+    process.exit(1)
+  }
+
+  console.log(`Uploading ${path.basename(b64Path)} → Secret Manager ${secret} (project ${project})…`)
+  const upload = spawnSync(
+    'gcloud',
+    ['secrets', 'versions', 'add', secret, `--data-file=${b64Path}`, `--project=${project}`],
+    { encoding: 'utf8' },
+  )
+  if (upload.status !== 0) {
+    console.error(upload.stderr || upload.stdout || 'gcloud secrets versions add failed')
+    process.exit(upload.status || 1)
+  }
+  console.log((upload.stdout || '').trim() || 'Secret version added.')
+
+  const service = fileEnv.GCLOUD_RUN_SERVICE || process.env.GCLOUD_RUN_SERVICE || ''
+  const region = fileEnv.GCLOUD_RUN_REGION || process.env.GCLOUD_RUN_REGION || ''
+  if (service && region) {
+    console.log(
+      `New secret version is live in Secret Manager. Warm Cloud Run instances may still hold the old value until they restart — force a new revision if needed:\n` +
+        `  gcloud run services update ${service} --region=${region} --project=${project}`,
+    )
+  } else {
+    console.log(
+      'New secret version is live in Secret Manager. Restart / redeploy Cloud Run if a warm instance still has the old env.',
+    )
+  }
+}
+
+const { browser, remote } = parseArgs(process.argv.slice(2))
+const out = path.resolve(root, 'yt-cookies.txt')
+const fileEnv = {
+  ...loadEnvFile(path.resolve(root, '.env')),
+  ...loadEnvFile(path.resolve(root, '.env.local')),
+}
+
 if (!allowed.has(browser)) {
   console.error(`Unknown browser "${browser}". Use: ${[...allowed].join(', ')}`)
   process.exit(1)
@@ -52,7 +153,7 @@ console.log(`Exporting cookies from ${browser}…`)
 const result = spawnSync(
   'yt-dlp',
   ['--cookies-from-browser', browser, '--cookies', out, '--skip-download', 'https://www.youtube.com/watch?v=jNQXAC9IVRw'],
-  { encoding: 'utf8' },
+  { encoding: 'utf8', cwd: root },
 )
 
 if (result.status !== 0) {
@@ -93,7 +194,7 @@ const header = kept.some((line) => line.startsWith('# Netscape'))
   : '# Netscape HTTP Cookie File\n# Filtered for YouTube only (PianoSmith)\n'
 const filtered = `${header}${kept.join('\n').trim()}\n`
 writeFileSync(out, filtered, 'utf8')
-const b64Path = path.resolve('yt-cookies.b64')
+const b64Path = path.resolve(root, 'yt-cookies.b64')
 const b64 = Buffer.from(filtered, 'utf8').toString('base64')
 writeFileSync(b64Path, b64, 'utf8')
 
@@ -103,14 +204,20 @@ const kb = (bytes / 1024).toFixed(1)
 console.log(`
 Wrote ${out} (${kb} KB, ${cookieLines} cookie lines — youtube hosts only, no .google.com)
 Wrote ${b64Path} (single-line Base64 for Cloud Run / secret env)
+`)
 
-Recommended on Cloud Run:
+if (remote) {
+  uploadSecretB64(b64Path, fileEnv)
+} else {
+  console.log(`Recommended on Cloud Run:
   1. Delete any broken YTDLP_COOKIES multiline variable
   2. Add YTDLP_COOKIES_B64 = contents of yt-cookies.b64 (one line, paste works)
+     or: npm run cookies:export -- remote
   3. Redeploy / restart
   4. Check GET /api/health → cookies.ok should be true
 
 Alternatives: YTDLP_COOKIES_URL or YTDLP_COOKIES_FILE.
 
-Do not commit yt-cookies.txt / yt-cookies.b64 — they are login secrets.
+Do not commit yt-cookies.txt / yt-cookies.b64 / .env — they are secrets.
 `)
+}
