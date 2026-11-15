@@ -10,16 +10,60 @@
  *   npm run cookies:export -- chrome
  *   npm run cookies:export -- firefox
  *   npm run cookies:export -- safari
+ *   npm run cookies:export -- remote
+ *   npm run cookies:export -- chrome remote
  *
  * Prefer YTDLP_COOKIES_B64 on Railway (see yt-cookies.b64).
+ * With `remote`, sets the Railway service variable via the Railway CLI (env secret, no volume).
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const browser = (process.argv[2] || 'chrome').toLowerCase()
-const out = path.resolve('yt-cookies.txt')
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const allowed = new Set(['chrome', 'chromium', 'firefox', 'safari', 'edge', 'brave', 'opera'])
+
+function loadEnvFile(filePath) {
+  if (!existsSync(filePath)) return {}
+  const env = {}
+  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const key = trimmed.slice(0, eq).trim()
+    let value = trimmed.slice(eq + 1).trim()
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1)
+    }
+    env[key] = value
+  }
+  return env
+}
+
+function parseArgs(argv) {
+  let browser = 'chrome'
+  let remote = false
+  for (const arg of argv) {
+    const lower = arg.toLowerCase()
+    if (lower === 'remote' || lower === '--remote') {
+      remote = true
+      continue
+    }
+    if (allowed.has(lower)) {
+      browser = lower
+      continue
+    }
+    console.error(`Unknown argument "${arg}". Use a browser name and/or remote.`)
+    console.error(`Browsers: ${[...allowed].join(', ')}`)
+    process.exit(1)
+  }
+  return { browser, remote }
+}
 
 /**
  * Keep only YouTube-related hosts (trial without .google.com auth cookies).
@@ -37,6 +81,86 @@ function keepHost(domainField) {
   return false
 }
 
+function resolveRailwayBin() {
+  const probe = spawnSync('railway', ['--version'], { encoding: 'utf8' })
+  if (!probe.error && probe.status === 0) return { cmd: 'railway', prefix: [] }
+  const npx = spawnSync('npx', ['--yes', '@railway/cli', '--version'], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  })
+  if (!npx.error && npx.status === 0) return { cmd: 'npx', prefix: ['--yes', '@railway/cli'] }
+  return null
+}
+
+function uploadRailwayVariable(b64Path, fileEnv) {
+  const varName =
+    fileEnv.RAILWAY_VARIABLE_YTDLP_COOKIES_B64 ||
+    process.env.RAILWAY_VARIABLE_YTDLP_COOKIES_B64 ||
+    'YTDLP_COOKIES_B64'
+  const service = fileEnv.RAILWAY_SERVICE || process.env.RAILWAY_SERVICE || ''
+  const environment = fileEnv.RAILWAY_ENVIRONMENT || process.env.RAILWAY_ENVIRONMENT || ''
+  const project = fileEnv.RAILWAY_PROJECT_ID || process.env.RAILWAY_PROJECT_ID || ''
+  const skipDeploys = /^(1|true|yes)$/i.test(
+    String(fileEnv.RAILWAY_SKIP_DEPLOYS || process.env.RAILWAY_SKIP_DEPLOYS || ''),
+  )
+
+  const bin = resolveRailwayBin()
+  if (!bin) {
+    console.error(
+      'Railway CLI not found. Install it (https://docs.railway.com/guides/cli) or ensure npx can run @railway/cli.',
+    )
+    process.exit(1)
+  }
+
+  const args = [...bin.prefix, 'variable', 'set', varName, '--stdin']
+  if (service) args.push('--service', service)
+  if (environment) args.push('--environment', environment)
+  if (project) args.push('--project', project)
+  if (skipDeploys) args.push('--skip-deploys')
+
+  const b64 = readFileSync(b64Path, 'utf8').replace(/\s+/g, '')
+  if (b64.length < 16) {
+    console.error(`Refusing to upload empty/short ${path.basename(b64Path)}`)
+    process.exit(1)
+  }
+
+  console.log(
+    `Uploading ${path.basename(b64Path)} → Railway variable ${varName}` +
+      (service ? ` (service ${service})` : '') +
+      (skipDeploys ? ' [--skip-deploys]' : ' [triggers redeploy]') +
+      '…',
+  )
+
+  const upload = spawnSync(bin.cmd, args, {
+    encoding: 'utf8',
+    input: b64,
+    shell: process.platform === 'win32',
+    env: process.env,
+  })
+  if (upload.status !== 0) {
+    console.error(upload.stderr || upload.stdout || 'railway variable set failed')
+    console.error(
+      '\nTip: run `railway login` and `railway link` in this repo, or set RAILWAY_TOKEN + RAILWAY_SERVICE in .env',
+    )
+    process.exit(upload.status || 1)
+  }
+  console.log((upload.stdout || '').trim() || `Updated Railway variable ${varName}.`)
+  if (skipDeploys) {
+    console.log('Skipped redeploy. Restart/redeploy the Railway service so it reloads YTDLP_COOKIES_B64.')
+  } else {
+    console.log(
+      'Railway will redeploy so the new env is picked up. Check GET /api/health → cookies.source=b64, cookies.ok=true.',
+    )
+  }
+}
+
+const { browser, remote } = parseArgs(process.argv.slice(2))
+const out = path.resolve(root, 'yt-cookies.txt')
+const fileEnv = {
+  ...loadEnvFile(path.resolve(root, '.env')),
+  ...loadEnvFile(path.resolve(root, '.env.local')),
+}
+
 if (!allowed.has(browser)) {
   console.error(`Unknown browser "${browser}". Use: ${[...allowed].join(', ')}`)
   process.exit(1)
@@ -52,7 +176,7 @@ console.log(`Exporting cookies from ${browser}…`)
 const result = spawnSync(
   'yt-dlp',
   ['--cookies-from-browser', browser, '--cookies', out, '--skip-download', 'https://www.youtube.com/watch?v=jNQXAC9IVRw'],
-  { encoding: 'utf8' },
+  { encoding: 'utf8', cwd: root },
 )
 
 if (result.status !== 0) {
@@ -84,7 +208,7 @@ for (const line of lines) {
 }
 
 if (!kept.some((line) => line && !line.startsWith('#'))) {
-  console.error('No YouTube cookies found. Log into YouTube in that browser and retry.')
+  console.error('No YouTube cookies found. Open YouTube in that browser and retry.')
   process.exit(1)
 }
 
@@ -93,7 +217,7 @@ const header = kept.some((line) => line.startsWith('# Netscape'))
   : '# Netscape HTTP Cookie File\n# Filtered for YouTube only (PianoSmith)\n'
 const filtered = `${header}${kept.join('\n').trim()}\n`
 writeFileSync(out, filtered, 'utf8')
-const b64Path = path.resolve('yt-cookies.b64')
+const b64Path = path.resolve(root, 'yt-cookies.b64')
 const b64 = Buffer.from(filtered, 'utf8').toString('base64')
 writeFileSync(b64Path, b64, 'utf8')
 
@@ -103,14 +227,19 @@ const kb = (bytes / 1024).toFixed(1)
 console.log(`
 Wrote ${out} (${kb} KB, ${cookieLines} cookie lines — youtube hosts only, no .google.com)
 Wrote ${b64Path} (single-line Base64 for Railway Variables)
+`)
 
-Recommended on Railway:
+if (remote) {
+  uploadRailwayVariable(b64Path, fileEnv)
+} else {
+  console.log(`Recommended on Railway:
   1. Delete any broken YTDLP_COOKIES multiline variable
-  2. Add YTDLP_COOKIES_B64 = contents of yt-cookies.b64 (one line, paste works)
-  3. Redeploy / restart
+  2. Set YTDLP_COOKIES_B64 from yt-cookies.b64, or: npm run cookies:export -- remote
+  3. Redeploy / restart (remote does this unless RAILWAY_SKIP_DEPLOYS=1)
   4. Check GET /api/health → cookies.ok should be true
 
 Alternatives: YTDLP_COOKIES_URL or YTDLP_COOKIES_FILE.
 
-Do not commit yt-cookies.txt / yt-cookies.b64 — they are login secrets.
+Do not commit yt-cookies.txt / yt-cookies.b64 / .env — they are secrets.
 `)
+}

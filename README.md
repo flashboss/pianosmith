@@ -43,17 +43,19 @@ YouTube often blocks datacenter IPs. There is no fully automatic bypass inside t
    ```bash
    npm run cookies:export
    # or: npm run cookies:export -- firefox
+   # upload yt-cookies.b64 to Railway Variables (needs Railway CLI + `.env` from `.env.example`):
+   npm run cookies:export -- remote
    ```
 
    The script **filters** to YouTube hosts only and writes **`yt-cookies.b64`** (one line).
 
-   **Important on Railway:** do **not** use multiline `YTDLP_COOKIES` (it corrupts TAB characters). Use only:
+   **Important on Railway:** do **not** use multiline `YTDLP_COOKIES` (it corrupts TAB characters). Use only **`YTDLP_COOKIES_B64`** (service variable / secret — no volume mount):
 
    1. Delete `YTDLP_COOKIES` if present  
-   2. Set **`YTDLP_COOKIES_B64`** = full contents of `yt-cookies.b64`  
-   3. Redeploy  
+   2. Set **`YTDLP_COOKIES_B64`** from `yt-cookies.b64`, or run **`npm run cookies:export -- remote`** (`railway variable set … --stdin`)  
+   3. Redeploy (remote triggers it unless `RAILWAY_SKIP_DEPLOYS=1`)  
 
-   `GET /api/health` must show `"source":"b64"` and `"ok":true`. Alternatives: `YTDLP_COOKIES_URL` or `YTDLP_COOKIES_FILE`. Do not commit cookie files.
+   `GET /api/health` must show `"source":"b64"` and `"ok":true`. Alternatives: `YTDLP_COOKIES_URL` or `YTDLP_COOKIES_FILE`. Do not commit cookie files or `.env`.
 
 2. **Residential proxy (unattended)** — set **`YTDLP_PROXY`** (or `HTTPS_PROXY`) to an HTTP/SOCKS proxy URL so yt-dlp exits through a non-datacenter IP. Best option if you want links to keep working without refreshing cookies.
 
