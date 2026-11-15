@@ -1,16 +1,20 @@
-import { spawn } from 'node:child_process'
-import { existsSync, createReadStream, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { existsSync, createReadStream, statSync } from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  archiveIdentifier,
+  archiveReachable,
+  downloadArchiveItem,
+  listArchiveSearch,
+  searchArchive,
+} from './archive.mjs'
 import { handleMidiBridge } from './midi-bridge.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const prod = process.env.NODE_ENV === 'production'
 const port = Number(process.env.PORT || 5173)
-const ID = /^[a-zA-Z0-9_-]{11}$/
 
 const AUDIO_TYPES = {
   '.mp3': 'audio/mpeg',
@@ -82,27 +86,21 @@ function readBody(req, limit = 100_000) {
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/
 const SPOTIFY_PATH = /^(?:\/intl-[a-z]{2})?\/(track|album|playlist|episode)\/([A-Za-z0-9]{22})(?:\/|$)/
 
-function youtubeUrl(input) {
+function isYoutubeInput(input) {
   const value = String(input || '').trim()
-  if (ID.test(value)) return `https://www.youtube.com/watch?v=${value}`
-  let url
+  if (/^[a-zA-Z0-9_-]{11}$/.test(value)) return true
   try {
-    url = new URL(value)
+    const url = new URL(value)
+    const host = url.hostname.replace(/^www\./, '')
+    return (
+      host === 'youtu.be' ||
+      host === 'youtube.com' ||
+      host === 'm.youtube.com' ||
+      host === 'music.youtube.com'
+    )
   } catch {
-    return null
+    return false
   }
-  const host = url.hostname.replace(/^www\./, '')
-  if (host === 'youtu.be') {
-    const id = url.pathname.split('/').filter(Boolean)[0] || ''
-    return ID.test(id) ? `https://www.youtube.com/watch?v=${id}` : null
-  }
-  if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
-    const watch = url.searchParams.get('v') || ''
-    if (url.pathname === '/watch' && ID.test(watch)) return `https://www.youtube.com/watch?v=${watch}`
-    const nested = url.pathname.match(/^\/(?:shorts|embed|live)\/([a-zA-Z0-9_-]{11})/)
-    if (nested) return `https://www.youtube.com/watch?v=${nested[1]}`
-  }
-  return null
 }
 
 function spotifyTarget(input) {
@@ -197,467 +195,19 @@ function songLabel(song) {
   return song.artist ? `${song.artist} — ${song.title}` : song.title
 }
 
-async function listYouTubeSearch(query, limit = 8) {
-  const capped = Math.min(Math.max(Number(limit) || 8, 1), 12)
-  const { stdout } = await run(
-    'yt-dlp',
-    [
-      '--flat-playlist',
-      '--no-warnings',
-      '--print',
-      '%(id)s\t%(duration)s\t%(uploader)s\t%(title)s',
-      `ytsearch${capped}:${query}`,
-    ],
-    root,
-    45000,
-  )
-  return stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [id, duration, uploader, ...rest] = line.split('\t')
-      return {
-        id,
-        duration: Number(duration),
-        channel: uploader || '',
-        title: rest.join('\t'),
-      }
-    })
-    .filter((row) => ID.test(row.id) && row.title)
-    .map((row) => ({
-      id: row.id,
-      title: row.title,
-      channel: row.channel,
-      duration: Number.isFinite(row.duration) && row.duration > 0 ? row.duration : 0,
-      url: `https://www.youtube.com/watch?v=${row.id}`,
-      thumbnail: `https://i.ytimg.com/vi/${row.id}/mqdefault.jpg`,
-    }))
-}
-
-async function searchYouTube(query, targetSeconds) {
-  const rows = await listYouTubeSearch(query, 8)
-  if (rows.length === 0) throw new Error('Nessun audio trovato per questo brano')
-  let best = rows[0]
-  let bestScore = Infinity
-  for (const row of rows) {
-    if (!row.duration) continue
-    const score = Math.abs(row.duration - targetSeconds)
-    if (score < bestScore) {
-      bestScore = score
-      best = row
-    }
-  }
-  return best
-}
-
-function commandEnv() {
-  const extra = ['/opt/homebrew/bin', '/usr/local/bin'].filter((dir) => existsSync(dir))
-  const current = process.env.PATH || ''
-  const merged = [...extra, ...current.split(path.delimiter)].filter(Boolean)
-  return { ...process.env, PATH: [...new Set(merged)].join(path.delimiter) }
-}
-
-function ffmpegDir() {
-  for (const dir of commandEnv().PATH.split(path.delimiter)) {
-    if (existsSync(path.join(dir, 'ffmpeg'))) return dir
-  }
-  return null
-}
-
-function run(cmd, args, cwd, timeoutMs = 180000) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, env: commandEnv() })
-    let stdout = ''
-    let stderr = ''
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      reject(new Error(timeoutMs < 60000 ? 'Ricerca scaduta' : 'Download scaduto'))
-    }, timeoutMs)
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk
-    })
-    child.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      if (code === 0) resolve({ stdout, stderr })
-      else reject(new Error(stderr.trim() || `${cmd} uscito con codice ${code}`))
-    })
-  })
-}
-
-async function ytdlpAvailable() {
-  try {
-    await run('yt-dlp', ['--version'], root)
-    return true
-  } catch {
-    return false
-  }
-}
-
-let busy = false
-let cookiesPath = null
-let cookiesReady = null
-let cookiesMeta = { source: null, bytes: 0, ok: false, error: null }
-
-/**
- * Cloud / UI env vars often flatten newlines or store literal \n / \t.
- * Netscape cookies need real newlines and tabs.
- */
-function recoverNetscapeLine(line) {
-  if (!line || line.includes('\t')) return line
-  if (line.startsWith('#') && !line.startsWith('#HttpOnly_')) return line
-  const httpOnly = line.startsWith('#HttpOnly_')
-  const body = httpOnly ? line.slice('#HttpOnly_'.length) : line
-  const parts = body.trim().split(/\s+/)
-  if (parts.length < 7 || !/[a-z0-9.-]+\.[a-z]{2,}/i.test(parts[0])) return line
-  const rebuilt = `${parts[0]}\t${parts[1]}\t${parts[2]}\t${parts[3]}\t${parts[4]}\t${parts[5]}\t${parts.slice(6).join(' ')}`
-  return httpOnly ? `#HttpOnly_${rebuilt}` : rebuilt
-}
-
-function normalizeCookiesText(raw) {
-  let text = String(raw || '').replace(/^\uFEFF/, '').trim()
-  if (!text) return ''
-  // Escaped newlines/tabs when a multiline secret was pasted as one line
-  text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  text = text.split('\n').map(recoverNetscapeLine).join('\n')
-  if (!/^(\s*#|$)/m.test(text) || !/# Netscape/i.test(text)) {
-    text = `# Netscape HTTP Cookie File\n# PianoSmith\n${text}`
-  }
-  if (!text.endsWith('\n')) text += '\n'
-  return text
-}
-
-function cookiesLookValid(text) {
-  const lines = text.split('\n').filter((line) => {
-    if (!line) return false
-    if (line.startsWith('#HttpOnly_')) return true
-    if (line.startsWith('#')) return false
-    return true
-  })
-  if (lines.length === 0) return false
-  return lines.some((line) => {
-    const body = line.startsWith('#HttpOnly_') ? line.slice('#HttpOnly_'.length) : line
-    return body.includes('\t') && /youtube|google|googlevideo/i.test(body)
-  })
-}
-
-/** Raw env paste without real tabs/newlines cannot be trusted — use Base64 instead. */
-function envCookiesTrustworthy(raw) {
-  return raw.includes('\t') || raw.includes('\\t') || (raw.includes('\n') && /youtube|google/i.test(raw))
-}
-
-/** Cookie/env diagnostics for Cloud Run logs — never print secret values. */
-function describeCookieText(text) {
-  const lines = String(text || '').split('\n')
-  const cookieLines = lines.filter((line) => {
-    if (!line) return false
-    if (line.startsWith('#HttpOnly_')) return true
-    if (line.startsWith('#')) return false
-    return true
-  })
-  const hosts = new Set()
-  for (const line of cookieLines) {
-    const body = line.startsWith('#HttpOnly_') ? line.slice('#HttpOnly_'.length) : line
-    const host = body.split('\t')[0]?.replace(/^\./, '') || ''
-    if (host) hosts.add(host)
-  }
-  const names = []
-  for (const line of cookieLines) {
-    const body = line.startsWith('#HttpOnly_') ? line.slice('#HttpOnly_'.length) : line
-    const parts = body.split('\t')
-    if (parts.length >= 6) names.push(parts[5])
-  }
-  return {
-    bytes: Buffer.byteLength(String(text || '')),
-    lines: lines.length,
-    cookieLines: cookieLines.length,
-    hosts: [...hosts].sort().slice(0, 20),
-    names: [...new Set(names)].sort().slice(0, 30),
-    hasNetscapeHeader: /# Netscape/i.test(text || ''),
-    hasYoutube: /youtube|googlevideo/i.test(text || ''),
-    hasGoogle: /\.google\.com|google\.com/i.test(text || ''),
-  }
-}
-
-function describeB64Env(raw) {
-  const present = process.env.YTDLP_COOKIES_B64 != null
-  const trimmed = String(raw || '')
-  const compact = trimmed.replace(/\s+/g, '')
-  return {
-    envPresent: present,
-    envDefined: typeof process.env.YTDLP_COOKIES_B64 === 'string',
-    rawLength: trimmed.length,
-    compactLength: compact.length,
-    whitespaceStripped: trimmed.length - compact.length,
-    prefix: compact.slice(0, 12),
-    suffix: compact.length > 12 ? compact.slice(-8) : '',
-    looksBase64: /^[A-Za-z0-9+/]+=*$/.test(compact) && compact.length >= 16,
-  }
-}
-
-function writeCookiesFile(raw, source) {
-  const text = normalizeCookiesText(raw)
-  const summary = describeCookieText(text)
-  console.log('[cookies] writeCookiesFile', { source, valid: cookiesLookValid(text), ...summary })
-  if (!cookiesLookValid(text)) {
-    throw new Error(
-      `Cookie YouTube non validi (source=${source}). Elimina YTDLP_COOKIES, riesegui npm run cookies:export e imposta solo YTDLP_COOKIES_B64.`,
-    )
-  }
-  cookiesPath = path.join(os.tmpdir(), 'pianosmith-yt-cookies.txt')
-  writeFileSync(cookiesPath, text, 'utf8')
-  cookiesMeta = { source, bytes: Buffer.byteLength(text), ok: true, error: null }
-  console.log('[cookies] wrote temp file', { path: cookiesPath, bytes: cookiesMeta.bytes, source })
-  return cookiesPath
-}
-
-/** Cloud Run secret volume paths for YTDLP_COOKIES_B64 (file content = base64 text). */
-function cookiesB64VolumeCandidates() {
-  const fromEnv = (process.env.YTDLP_COOKIES_B64_FILE || process.env.YTDLP_COOKIES_B64_PATH || '').trim()
-  return [
-    fromEnv,
-    // Active Cloud Run revision: volume mountPath=/volumes, secret path=YTDLP_COOKIES_B64
-    '/volumes/YTDLP_COOKIES_B64',
-    '/secrets/YTDLP_COOKIES_B64',
-    '/var/secrets/YTDLP_COOKIES_B64',
-    '/etc/secrets/YTDLP_COOKIES_B64',
-  ].filter(Boolean)
-}
-
-function tryReadCookiesB64File(filePath) {
-  if (!filePath || !existsSync(filePath)) return null
-  try {
-    const st = statSync(filePath)
-    // Cloud Run may mount a directory; secret payload is a file with the secret id.
-    if (st.isDirectory()) {
-      const nested = path.join(filePath, 'YTDLP_COOKIES_B64')
-      return tryReadCookiesB64File(nested)
-    }
-    if (!st.isFile()) return null
-    const raw = readFileSync(filePath, 'utf8')
-    if (!raw.trim()) return null
-    return { raw, via: 'volume', path: filePath }
-  } catch {
-    return null
-  }
-}
-
-/**
- * Prefer a mounted secret volume when present (Cloud Run), then fall back to
- * YTDLP_COOKIES_B64 env for local/dev — locals never have /secrets/… so they keep using env.
- */
-function readCookiesB64Source() {
-  for (const filePath of cookiesB64VolumeCandidates()) {
-    const fromVolume = tryReadCookiesB64File(filePath)
-    if (fromVolume) return fromVolume
-  }
-  const fromEnv = process.env.YTDLP_COOKIES_B64
-  if (fromEnv?.trim()) return { raw: fromEnv, via: 'env', path: null }
-  return null
-}
-
-function decodeCookiesB64(raw, via) {
-  const compact = String(raw || '').replace(/\s+/g, '')
-  let decoded
-  try {
-    decoded = Buffer.from(compact, 'base64').toString('utf8')
-  } catch (error) {
-    console.error(`[cookies] YTDLP_COOKIES_B64 (${via}) base64 decode failed`, String(error?.message || error))
-    throw error
-  }
-  console.log(`[cookies] YTDLP_COOKIES_B64 decoded (${via})`, describeCookieText(decoded))
-  if (!/youtube|google|googlevideo/i.test(decoded)) {
-    throw new Error(
-      'YTDLP_COOKIES_B64 non decodifica un file cookie YouTube. Incolla il contenuto di yt-cookies.b64 (non il .txt).',
-    )
-  }
-  return decoded
-}
-
-/**
- * Resolve cookies for yt-dlp (first match wins):
- * Cloud Run volume file → YTDLP_COOKIES_B64 env → YTDLP_COOKIES_FILE → URL → YTDLP_COOKIES
- * Volume mounts are re-read every call so `gcloud secrets versions add` applies without redeploy.
- */
-async function ensureYoutubeCookiesArgs() {
-  const b64Source = readCookiesB64Source()
-  // Env B64 is fixed for the process lifetime; volume files can change in place.
-  if (cookiesReady && b64Source?.via !== 'volume') return cookiesReady
-
-  const resolve = async () => {
-    try {
-      console.log('[cookies] resolve start', {
-        YTDLP_COOKIES_B64: describeB64Env(b64Source?.via === 'env' ? b64Source.raw : process.env.YTDLP_COOKIES_B64),
-        YTDLP_COOKIES_B64_FILE: b64Source?.via === 'volume' ? b64Source.path : (process.env.YTDLP_COOKIES_B64_FILE || null),
-        volumeCandidates: cookiesB64VolumeCandidates(),
-        YTDLP_COOKIES_FILE: Boolean(process.env.YTDLP_COOKIES_FILE),
-        YTDLP_COOKIES_URL: Boolean(process.env.YTDLP_COOKIES_URL?.trim()),
-        YTDLP_COOKIES: Boolean(process.env.YTDLP_COOKIES?.trim()),
-        YTDLP_PROXY: Boolean((process.env.YTDLP_PROXY || '').trim()),
-      })
-      if (b64Source) {
-        const decoded = decodeCookiesB64(b64Source.raw, b64Source.via)
-        const sourceTag = b64Source.via === 'volume' ? 'b64-volume' : 'b64'
-        const args = ['--cookies', writeCookiesFile(decoded, sourceTag)]
-        console.log(`[cookies] using source=${sourceTag}`, { ...cookiesMeta, path: b64Source.path })
-        return args
-      }
-      if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
-        cookiesMeta = { source: 'file', bytes: 0, ok: true, error: null }
-        console.log('[cookies] using source=file', process.env.YTDLP_COOKIES_FILE)
-        return ['--cookies', process.env.YTDLP_COOKIES_FILE]
-      }
-      const url = process.env.YTDLP_COOKIES_URL?.trim()
-      if (url) {
-        const response = await fetch(url, { redirect: 'follow' })
-        if (!response.ok) throw new Error(`Cookie URL HTTP ${response.status}`)
-        const text = await response.text()
-        if (text.trim().length < 20) throw new Error('Cookie URL returned an empty file')
-        const args = ['--cookies', writeCookiesFile(text, 'url')]
-        console.log('[cookies] using source=url', cookiesMeta)
-        return args
-      }
-      const raw = process.env.YTDLP_COOKIES?.trim()
-      if (raw) {
-        if (!envCookiesTrustworthy(raw)) {
-          throw new Error(
-            'YTDLP_COOKIES è corrotto (TAB/newline spezzati dall’env). Eliminalo e usa YTDLP_COOKIES_B64 da npm run cookies:export.',
-          )
-        }
-        const args = ['--cookies', writeCookiesFile(raw, 'env')]
-        console.log('[cookies] using source=env', cookiesMeta)
-        return args
-      }
-      cookiesMeta = { source: null, bytes: 0, ok: false, error: null }
-      console.warn('[cookies] no cookie env configured')
-      return []
-    } catch (error) {
-      cookiesMeta = {
-        source: cookiesMeta.source,
-        bytes: 0,
-        ok: false,
-        error: String(error?.message || error).slice(0, 220),
-      }
-      console.error('[cookies] resolve failed', cookiesMeta)
-      cookiesReady = null
-      throw error
-    }
-  }
-
-  if (b64Source?.via === 'volume') return resolve()
-  cookiesReady = resolve()
-  return cookiesReady
-}
-
-/** Optional HTTP(S) proxy so yt-dlp leaves from a residential IP instead of the cloud host. */
-function youtubeProxyArgs() {
-  const proxy = (process.env.YTDLP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').trim()
-  return proxy ? ['--proxy', proxy] : []
-}
-
-async function downloadYouTube(url, titleOverride) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'pianosmith-'))
-  try {
-    const args = [
-      '--playlist-items',
-      '1',
-      '--no-simulate',
-      '--no-progress',
-      '--restrict-filenames',
-      '--match-filter',
-      'duration < 600',
-      // Cloud hosts (Cloud Run, etc.) are often blocked on the web client; android/ios
-      // plus a JS runtime for YouTube challenges work more reliably.
-      '--js-runtimes',
-      'node',
-      '--extractor-args',
-      'youtube:player_client=android,ios,web',
-      '-f',
-      'bestaudio/best',
-      '-x',
-      '--audio-format',
-      'mp3',
-      '--audio-quality',
-      '5',
-      '-o',
-      'audio.%(ext)s',
-      '--print',
-      '%(title)s',
-      ...(await ensureYoutubeCookiesArgs()),
-      ...youtubeProxyArgs(),
-    ]
-    const ffmpeg = ffmpegDir()
-    if (ffmpeg) args.push('--ffmpeg-location', ffmpeg)
-    args.push(url)
-    console.log('[yt-dlp] download start', {
-      cookies: { ...cookiesMeta, path: cookiesPath },
-      proxy: Boolean((process.env.YTDLP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').trim()),
-      hasCookiesFlag: args.includes('--cookies'),
-    })
-    try {
-      const { stdout } = await run('yt-dlp', args, dir)
-      const printed = stdout.split('\n').map((line) => line.trim()).find(Boolean) || 'Audio'
-      const title = titleOverride || printed
-      const files = await readdir(dir)
-      const audioName = files.find((name) => AUDIO_TYPES[path.extname(name).toLowerCase()])
-      if (!audioName) throw new Error('Audio non trovato dopo il download')
-      const filePath = path.join(dir, audioName)
-      const data = await readFile(filePath)
-      if (data.length < 1000) throw new Error('Audio scaricato vuoto')
-      if (data.length > 45 * 1024 * 1024) throw new Error('Audio troppo grande')
-      console.log('[yt-dlp] download ok', { title: title.slice(0, 80), bytes: data.length })
-      return {
-        title: title.slice(0, 180),
-        data,
-        type: AUDIO_TYPES[path.extname(audioName).toLowerCase()] || 'application/octet-stream',
-      }
-    } catch (error) {
-      console.error('[yt-dlp] download failed', {
-        cookies: cookiesMeta,
-        message: String(error?.message || error).slice(0, 800),
-      })
-      throw error
-    }
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-}
 
 function friendly(error) {
   const text = String(error?.message || error || '')
-  if (error?.code === 'ENOENT' || text.includes('ENOENT') || (/yt-dlp/i.test(text) && /not found/i.test(text))) {
-    return 'yt-dlp non è installato su questo computer'
+  if (/YouTube non è più supportato/i.test(text)) return text
+  if (/supera i 10 minuti|too large|troppo grande/i.test(text)) {
+    return /10 minut/i.test(text) ? 'Il brano supera i 10 minuti' : 'Audio troppo grande'
   }
-  if (/ffmpeg|ffprobe/i.test(text)) return 'ffmpeg non è installato su questo computer'
-  if (/does not pass|filtered|duration/i.test(text)) return 'Il video supera i 10 minuti'
-  if (/Cookie YouTube non validi|YTDLP_COOKIES|does not look like a Netscape/i.test(text)) {
-    return text.includes('YTDLP_COOKIES_B64') || text.includes('yt-cookies.b64')
-      ? text.slice(0, 240)
-      : 'Cookie YouTube non validi sul server. Elimina YTDLP_COOKIES, riesegui npm run cookies:export e imposta solo YTDLP_COOKIES_B64 (contenuto di yt-cookies.b64).'
-  }
-  if (/proxy|tunnel connection failed/i.test(text)) {
-    return 'Proxy non raggiungibile. Controlla YTDLP_PROXY / HTTPS_PROXY.'
-  }
-  if (/sign in to confirm|not a bot|cookies? are (?:required|needed)|http error 403/i.test(text)) {
-    return 'YouTube blocca i download da questo server (IP cloud). Imposta YTDLP_COOKIES_B64 (da npm run cookies:export), oppure YTDLP_PROXY, oppure usa un file audio locale.'
-  }
-  if (/private|unavailable|confirm your age|sign in/i.test(text)) return 'Video non disponibile'
-  if (text === 'Download scaduto') return 'Download scaduto. Riprova.'
-  if (/unsupported url|no suitable extractor|unable to extract|not a valid url/i.test(text)) {
-    return 'Questo link non contiene un audio che posso scaricare'
-  }
-  if (/Spotify|brano|Nessun audio|Link non valido|Il file ha risposto|Audio troppo grande|Audio scaricato vuoto|Cookie URL/i.test(text)) {
+  if (text === 'Download scaduto' || /Archive\.org non risponde/i.test(text)) return text
+  if (/Archive\.org|Nessun (audio|file)|Identificativo|Link Archive/i.test(text)) return text.slice(0, 240)
+  if (/Spotify|brano|Link non valido|Il file ha risposto|Audio scaricato vuoto|pagina/i.test(text)) {
+    if (/pagina/i.test(text)) return 'Questo link non punta a un file audio o a un item Archive.org'
     return text
   }
-  // Surface a short yt-dlp hint without dumping full stderr to clients.
   const line = text.split('\n').map((part) => part.trim()).find(Boolean) || ''
   if (line.length > 12 && line.length < 220 && !/node:|at |\/app\//i.test(line)) return line
   return 'Non sono riuscito a scaricare l’audio'
@@ -774,27 +324,29 @@ async function downloadDirect(url) {
 }
 
 async function downloadFromLink(input) {
-  const youtube = youtubeUrl(input)
-  if (youtube) return downloadYouTube(youtube)
+  if (isYoutubeInput(input)) {
+    throw new Error('YouTube non è più supportato. Usa un link Internet Archive (archive.org) o un file audio.')
+  }
+  if (archiveIdentifier(input)) {
+    return downloadArchiveItem(input)
+  }
   if (spotifyTarget(input)) {
     const song = await resolveSpotify(input)
     if (song.durationMs > 600000) throw new Error('Il brano supera i 10 minuti')
     const query = cleanQuery(`${song.artist} ${song.title}`)
     if (!query) throw new Error('Brano Spotify non trovato')
-    const match = await searchYouTube(query, song.durationMs / 1000)
-    return downloadYouTube(`https://www.youtube.com/watch?v=${match.id}`, songLabel(song))
+    const match = await searchArchive(query, song.durationMs / 1000)
+    return downloadArchiveItem(match.url, songLabel(song))
   }
   const page = publicHttpUrl(input)
   if (!page) return null
   if (audioExtension(page)) {
-    try {
-      return await downloadDirect(page)
-    } catch (error) {
-      if (!/pagina/i.test(String(error?.message || ''))) throw error
-    }
+    return downloadDirect(page)
   }
-  return downloadYouTube(page.toString())
+  throw new Error('Usa un link archive.org/details/…, un file audio diretto, o un link Spotify')
 }
+
+let busy = false
 
 function serveStatic(req, res) {
   const dist = path.join(root, 'dist')
@@ -833,22 +385,9 @@ const server = http.createServer(async (req, res) => {
   try {
     if (await handleMidiBridge(req, res, url, sendJson, readBody)) return
     if (url.pathname === '/api/health') {
-      const ytdlp = await ytdlpAvailable()
-      try {
-        await ensureYoutubeCookiesArgs()
-      } catch {
-        /* cookiesMeta already set */
-      }
       sendJson(res, 200, {
         ok: true,
-        ytdlp,
-        cookies: {
-          source: cookiesMeta.source,
-          bytes: cookiesMeta.bytes,
-          ok: cookiesMeta.ok,
-          error: cookiesMeta.error,
-          proxy: Boolean((process.env.YTDLP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').trim()),
-        },
+        archive: await archiveReachable(),
       })
       return
     }
@@ -858,12 +397,8 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { message: 'Scrivi almeno 2 caratteri' })
         return
       }
-      if (!(await ytdlpAvailable())) {
-        sendJson(res, 503, { message: 'yt-dlp non disponibile' })
-        return
-      }
       try {
-        const results = await listYouTubeSearch(query, 8)
+        const results = await listArchiveSearch(query, 8)
         sendJson(res, 200, { results })
       } catch (error) {
         console.error(error)
@@ -878,8 +413,13 @@ const server = http.createServer(async (req, res) => {
       }
       const raw = await readBody(req)
       const body = JSON.parse(raw.toString('utf8') || '{}')
-      if (!youtubeUrl(body.url) && !spotifyTarget(body.url) && !publicHttpUrl(body.url)) {
-        sendJson(res, 400, { message: 'Incolla un link http o https' })
+      if (
+        !archiveIdentifier(body.url) &&
+        !spotifyTarget(body.url) &&
+        !publicHttpUrl(body.url) &&
+        !isYoutubeInput(body.url)
+      ) {
+        sendJson(res, 400, { message: 'Incolla un link Archive.org, Spotify o un file audio' })
         return
       }
       busy = true
@@ -939,19 +479,7 @@ server.listen(port, '0.0.0.0', () => {
       if (entry.family === 'IPv4' && !entry.internal) console.log(`             http://${entry.address}:${port}`)
     }
   }
-  console.log('[cookies] boot env', {
-    YTDLP_COOKIES_B64: describeB64Env(process.env.YTDLP_COOKIES_B64),
-    YTDLP_COOKIES_B64_FILE: process.env.YTDLP_COOKIES_B64_FILE || process.env.YTDLP_COOKIES_B64_PATH || null,
-    volumeCandidates: cookiesB64VolumeCandidates().map((p) => ({ path: p, exists: existsSync(p) })),
-    YTDLP_COOKIES_FILE: process.env.YTDLP_COOKIES_FILE || null,
-    YTDLP_COOKIES_URL: Boolean(process.env.YTDLP_COOKIES_URL?.trim()),
-    YTDLP_COOKIES: Boolean(process.env.YTDLP_COOKIES?.trim()),
+  archiveReachable().then((ok) => {
+    console.log(`[archive] reachable=${ok}`)
   })
-  ensureYoutubeCookiesArgs()
-    .then((args) => {
-      console.log('[cookies] boot resolve ok', { args: args[0] || null, meta: cookiesMeta })
-    })
-    .catch((error) => {
-      console.error('[cookies] boot resolve failed', String(error?.message || error).slice(0, 300))
-    })
 })

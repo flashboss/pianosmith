@@ -2418,7 +2418,7 @@ registerRemote()
 void refreshLinkServer()
 void refreshLibraryButton()
 
-/** Pull a playable URL out of Android share text (YouTube/Spotify often add a caption). */
+/** Pull a playable URL out of Android share text (Archive/Spotify often add a caption). */
 function extractSharedUrl(text: string): string | null {
   const trimmed = text.trim()
   if (!trimmed) return null

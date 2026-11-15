@@ -11,7 +11,7 @@
       github: 'GitHub',
       inputTitle: 'One input. A playable lesson.',
       inputBody:
-        'Drop an MP3, WAV, or MIDI file, paste a music link, or open the built-in demo. Transcription runs on your device with Spotify Basic Pitch; shared links use a small local helper with yt-dlp.',
+        'Drop an MP3, WAV, or MIDI file, paste an Internet Archive link, or open the built-in demo. Transcription runs on your device with Spotify Basic Pitch; shared Archive links use the app server.',
       platformsTitle: 'Web, TV, and phone.',
       platformsBody:
         'Run it in the browser, install the Samsung Tizen widget, or build the Android app. Local audio and MIDI work offline; open the hosted app (or your computer’s address) when you need a web link.',
@@ -65,7 +65,7 @@
       github: 'GitHub',
       inputTitle: 'Un input. Una lezione suonabile.',
       inputBody:
-        'Trascina un MP3, WAV o MIDI, incolla un link musicale o apri la demo integrata. La trascrizione gira sul dispositivo con Spotify Basic Pitch; i link condivisi usano un piccolo helper locale con yt-dlp.',
+        'Trascina un MP3, WAV o MIDI, incolla un link Internet Archive o apri la demo. La trascrizione gira sul dispositivo con Spotify Basic Pitch; i link Archive usano il server dell’app.',
       platformsTitle: 'Web, TV e telefono.',
       platformsBody:
         'Usalo nel browser, installa il widget Samsung Tizen o compila l’app Android. Audio e MIDI locali funzionano offline; apri l’app ospitata (o l’indirizzo del computer) quando ti serve un link web.',
@@ -119,7 +119,7 @@
       github: 'GitHub',
       inputTitle: 'Une entrée. Une leçon jouable.',
       inputBody:
-        'Déposez un MP3, WAV ou MIDI, collez un lien musical ou ouvrez la démo intégrée. La transcription tourne sur votre appareil avec Spotify Basic Pitch ; les liens partagés passent par un petit helper local avec yt-dlp.',
+        'Déposez un MP3, WAV ou MIDI, collez un lien musical ou ouvrez la démo intégrée. La transcription tourne sur votre appareil avec Spotify Basic Pitch ; les liens Archive passent par le serveur de l’app.',
       platformsTitle: 'Web, TV et téléphone.',
       platformsBody:
         'Lancez-le dans le navigateur, installez le widget Samsung Tizen ou compilez l’app Android. Audio et MIDI locaux fonctionnent hors ligne ; ouvrez l’app hébergée (ou l’adresse de l’ordinateur) pour un lien web.',
@@ -144,7 +144,7 @@
       github: 'GitHub',
       inputTitle: 'Una entrada. Una lección tocable.',
       inputBody:
-        'Suelta un MP3, WAV o MIDI, pega un enlace musical o abre la demo integrada. La transcripción corre en tu dispositivo con Spotify Basic Pitch; los enlaces compartidos usan un pequeño helper local con yt-dlp.',
+        'Suelta un MP3, WAV o MIDI, pega un enlace musical o abre la demo integrada. La transcripción corre en tu dispositivo con Spotify Basic Pitch; los enlaces de Archive usan el servidor de la app.',
       platformsTitle: 'Web, TV y teléfono.',
       platformsBody:
         'Úsalo en el navegador, instala el widget Samsung Tizen o compila la app Android. El audio y MIDI locales funcionan sin conexión; abre la app alojada (o la dirección del ordenador) cuando necesites un enlace web.',
@@ -169,7 +169,7 @@
       github: 'GitHub',
       inputTitle: 'Ein Input. Eine spielbare Lektion.',
       inputBody:
-        'Lege eine MP3-, WAV- oder MIDI-Datei ab, füge einen Musiklink ein oder öffne die eingebaute Demo. Die Transkription läuft auf dem Gerät mit Spotify Basic Pitch; geteilte Links nutzen einen kleinen lokalen Helper mit yt-dlp.',
+        'Lege eine MP3-, WAV- oder MIDI-Datei ab, füge einen Musiklink ein oder öffne die eingebaute Demo. Die Transkription läuft auf dem Gerät mit Spotify Basic Pitch; geteilte Archive-Links nutzen den App-Server.',
       platformsTitle: 'Web, TV und Telefon.',
       platformsBody:
         'Im Browser starten, das Samsung-Tizen-Widget installieren oder die Android-App bauen. Lokales Audio und MIDI funktionieren offline; für Weblinks die gehostete App (oder die Adresse des Computers) öffnen.',
@@ -193,7 +193,7 @@
       github: 'GitHub',
       inputTitle: '一种输入。一节可弹的课。',
       inputBody:
-        '拖入 MP3、WAV 或 MIDI，粘贴音乐链接，或打开内置演示。转录在本地用 Spotify Basic Pitch 完成；共享链接通过带 yt-dlp 的本地小助手处理。',
+        '拖入 MP3、WAV 或 MIDI，粘贴音乐链接，或打开内置演示。转录在本地用 Spotify Basic Pitch 完成；共享 Archive 链接由应用服务器处理。',
       platformsTitle: '网页、电视与手机。',
       platformsBody:
         '在浏览器中运行、安装三星 Tizen 组件，或构建 Android 应用。本地音频与 MIDI 可离线使用；需要网页链接时打开托管应用（或电脑地址）。',
@@ -217,7 +217,7 @@
       github: 'GitHub',
       inputTitle: 'ひとつの入力。弾けるレッスン。',
       inputBody:
-        'MP3・WAV・MIDI をドロップするか、音楽リンクを貼るか、内蔵デモを開きます。書き起こしは Spotify Basic Pitch で端末上で実行され、共有リンクは yt-dlp 付きの小さなローカルヘルパーを使います。',
+        'MP3・WAV・MIDI をドロップするか、音楽リンクを貼るか、内蔵デモを開きます。書き起こしは Spotify Basic Pitch で端末上で実行され、共有 Archive リンクはアプリのサーバーを使います。',
       platformsTitle: 'Web・TV・スマホ。',
       platformsBody:
         'ブラウザで動かす、Samsung Tizen ウィジェットを入れる、または Android アプリをビルド。ローカルの音声と MIDI はオフラインで使え、Web リンクが必要なときはホストされたアプリ（または PC のアドレス）を開きます。',

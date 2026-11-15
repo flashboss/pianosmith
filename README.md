@@ -6,7 +6,7 @@ Project site: https://pianosmith.vige.it/ (GitHub Pages, custom domain).
 
 In the repo settings, set Pages to deploy from the `main` branch `/docs` folder. The `docs/CNAME` file points the site to `pianosmith.vige.it`.
 
-Transcription runs on the device with [Spotify Basic Pitch](https://github.com/spotify/basic-pitch) (Apache-2.0). Audio and MIDI never need a server. Any public `http` or `https` link is accepted. Direct audio and MIDI files (MP3, WAV, FLAC, M4A, AAC, OGG, Opus, WebM, AIFF, WMA, MIDI) are downloaded as files. Other pages are downloaded with `yt-dlp`, which covers YouTube, SoundCloud, Bandcamp, Mixcloud, Vimeo, and the other sites it supports. A playlist or album uses the first playable item. A Spotify link is resolved from public embed metadata (title, artist, duration), then matched to a recording by duration, because the stream itself is not available.
+Transcription runs on the device with [Spotify Basic Pitch](https://github.com/spotify/basic-pitch) (Apache-2.0). Audio and MIDI never need a server. Direct audio and MIDI files (MP3, WAV, FLAC, M4A, AAC, OGG, Opus, WebM, AIFF, WMA, MIDI) are fetched as files. Shared catalogue search and `archive.org/details/…` links use the [Internet Archive](https://archive.org/) APIs (no YouTube, no cookies, no yt-dlp). A Spotify link is resolved from public embed metadata (title, artist, duration), then matched to an Archive recording by duration, because the Spotify stream itself is not available.
 
 ## Run on the web
 
@@ -17,7 +17,7 @@ npm run dev
 
 Open http://localhost:5173 . Drop an MP3, WAV, M4A, FLAC, or MIDI file, paste a music link, or play the built-in demo. Loaded tracks are kept in a local library (IndexedDB): open **Brani salvati** to browse them, create folders, move tracks, or remove them without downloading or transcribing again. **Video** records a 1920×1080 WebM of the performance. **MIDI** downloads the transcribed notes.
 
-Shared links need `yt-dlp` and `ffmpeg` on the machine running the server. Tracks longer than 10 minutes are rejected. Direct files are limited to 45 MB.
+Shared Archive links need a reachable PianoSmith server (outbound HTTPS to archive.org). Tracks longer than 10 minutes are rejected. Direct files are limited to 45 MB.
 
 ```bash
 npm run build
@@ -30,38 +30,9 @@ GitHub Pages (`pianosmith.vige.it`) only hosts the static marketing site. The fu
 
 https://pianosmith-40961844406.europe-west1.run.app/
 
-Phones and TVs use that host for shared music links (and as the default **Server** in the Tizen/Android builds). The root **`Dockerfile`** builds the image:
+Phones and TVs use that host for shared music links (and as the default **Server** in the Tizen/Android builds). The root **`Dockerfile`** builds a slim Node image (no yt-dlp/ffmpeg): `npm ci`, **`npm run build`**, `npm start`.
 
-- installs **ffmpeg** and **yt-dlp** (required for shared links; not provided by `npm`)
-- runs `npm ci`, **`npm run build`**, and `npm start` so the container serves both the UI and `/api/link`
-- listens on `0.0.0.0` and the platform `PORT`
-
-Deploy with that Dockerfile to Cloud Run (or another host). After deploy, open the public URL and leave the in-app **Server** field empty when the UI and API are on the same origin. Check `GET /api/health` — it should report `"ytdlp": true`.
-
-YouTube often blocks datacenter IPs. There is no fully automatic bypass inside the container alone; use one of these project-supported mitigations:
-
-1. **Browser cookies (semi-automatic)** — on your Mac, while logged into YouTube in Chrome/Firefox/Safari:
-
-   ```bash
-   npm run cookies:export
-   # or: npm run cookies:export -- firefox
-   # upload yt-cookies.b64 to Secret Manager (needs gcloud + `.env` from `.env.example`):
-   npm run cookies:export -- remote
-   ```
-
-   The script **filters** to YouTube hosts only and writes **`yt-cookies.b64`** (one line).
-
-   Prefer Secret Manager + a Cloud Run **volume** mount of **`YTDLP_COOKIES_B64`** (file content = one-line base64 from `yt-cookies.b64`). Default probe includes **`/volumes/YTDLP_COOKIES_B64`** (mountPath `/volumes` + secret path). Override with **`YTDLP_COOKIES_B64_FILE`** if needed. Volume wins over env when present; local servers keep using env.
-
-   1. Mount the secret as a volume (`:latest`); remove the env binding on Cloud Run if both were set  
-   2. Refresh with **`npm run cookies:export -- remote`** → `gcloud secrets versions add … --data-file=yt-cookies.b64` (no redeploy)  
-   3. Next download re-reads the volume file (`source: b64-volume`)  
-
-   Local `npm run dev` / `npm start`: use env `YTDLP_COOKIES_B64`, Netscape `YTDLP_COOKIES_FILE`, or `YTDLP_COOKIES_URL` as before. Do not commit cookie files or `.env`.
-
-2. **Residential proxy (unattended)** — set **`YTDLP_PROXY`** (or `HTTPS_PROXY`) to an HTTP/SOCKS proxy URL so yt-dlp exits through a non-datacenter IP. Best option if you want links to keep working without refreshing cookies.
-
-3. **Skip remote YouTube** — drop an audio/MIDI file in the app (always works on-device).
+Deploy with that Dockerfile to Cloud Run (or another host). After deploy, open the public URL and leave the in-app **Server** field empty when the UI and API are on the same origin. Check `GET /api/health` — it should report `"archive": true`. You can remove any old `YTDLP_COOKIES_*` secrets from the service.
 
 ```bash
 docker build -t pianosmith .
@@ -116,9 +87,9 @@ npm run android:open
 
 Build and run from Android Studio. On the phone, file and MIDI import work offline. For a shared link, set the server field to the computer running `npm run dev` (or your Cloud Run URL).
 
-The APK is an Android **share target**: from YouTube, Spotify, Chrome, etc., use **Share → PianoSmith** to open the shared URL in the app and start transcription (needs a reachable link server for non-file URLs).
+The APK is an Android **share target**: from Archive.org, Spotify, Chrome, etc., use **Share → PianoSmith** to open the shared URL in the app and start transcription (needs a reachable link server for non-file URLs).
 
-The hosted web app is also a **PWA** with [Web Share Target](https://developer.mozilla.org/en-US/docs/Web/Manifest/share_target): install it from Chrome on Android (**Install app** / Add to Home screen), then share a link into PianoSmith. After a deploy, uninstall and reinstall the PWA (or clear site data) so Chrome picks up the updated manifest. Not every app lists PWAs in its share sheet; the APK is more reliable for Spotify/YouTube.
+The hosted web app is also a **PWA** with [Web Share Target](https://developer.mozilla.org/en-US/docs/Web/Manifest/share_target): install it from Chrome on Android (**Install app** / Add to Home screen), then share a link into PianoSmith. After a deploy, uninstall and reinstall the PWA (or clear site data) so Chrome picks up the updated manifest.
 
 ## Keys
 
