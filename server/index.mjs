@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, createReadStream, statSync, writeFileSync } from 'node:fs'
+import { existsSync, createReadStream, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import http from 'node:http'
 import os from 'node:os'
@@ -419,41 +419,93 @@ function writeCookiesFile(raw, source) {
   return cookiesPath
 }
 
+/** Cloud Run secret volume paths for YTDLP_COOKIES_B64 (file content = base64 text). */
+function cookiesB64VolumeCandidates() {
+  const fromEnv = (process.env.YTDLP_COOKIES_B64_FILE || process.env.YTDLP_COOKIES_B64_PATH || '').trim()
+  return [
+    fromEnv,
+    '/secrets/YTDLP_COOKIES_B64',
+    '/var/secrets/YTDLP_COOKIES_B64',
+    '/etc/secrets/YTDLP_COOKIES_B64',
+  ].filter(Boolean)
+}
+
+function tryReadCookiesB64File(filePath) {
+  if (!filePath || !existsSync(filePath)) return null
+  try {
+    const st = statSync(filePath)
+    // Cloud Run may mount a directory; secret payload is a file with the secret id.
+    if (st.isDirectory()) {
+      const nested = path.join(filePath, 'YTDLP_COOKIES_B64')
+      return tryReadCookiesB64File(nested)
+    }
+    if (!st.isFile()) return null
+    const raw = readFileSync(filePath, 'utf8')
+    if (!raw.trim()) return null
+    return { raw, via: 'volume', path: filePath }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Prefer a mounted secret volume when present (Cloud Run), then fall back to
+ * YTDLP_COOKIES_B64 env for local/dev — locals never have /secrets/… so they keep using env.
+ */
+function readCookiesB64Source() {
+  for (const filePath of cookiesB64VolumeCandidates()) {
+    const fromVolume = tryReadCookiesB64File(filePath)
+    if (fromVolume) return fromVolume
+  }
+  const fromEnv = process.env.YTDLP_COOKIES_B64
+  if (fromEnv?.trim()) return { raw: fromEnv, via: 'env', path: null }
+  return null
+}
+
+function decodeCookiesB64(raw, via) {
+  const compact = String(raw || '').replace(/\s+/g, '')
+  let decoded
+  try {
+    decoded = Buffer.from(compact, 'base64').toString('utf8')
+  } catch (error) {
+    console.error(`[cookies] YTDLP_COOKIES_B64 (${via}) base64 decode failed`, String(error?.message || error))
+    throw error
+  }
+  console.log(`[cookies] YTDLP_COOKIES_B64 decoded (${via})`, describeCookieText(decoded))
+  if (!/youtube|google|googlevideo/i.test(decoded)) {
+    throw new Error(
+      'YTDLP_COOKIES_B64 non decodifica un file cookie YouTube. Incolla il contenuto di yt-cookies.b64 (non il .txt).',
+    )
+  }
+  return decoded
+}
+
 /**
  * Resolve cookies for yt-dlp (first match wins):
- * YTDLP_COOKIES_B64 → YTDLP_COOKIES_FILE → YTDLP_COOKIES_URL → YTDLP_COOKIES
- * Base64 is preferred because multiline secret UIs often corrupt Netscape tabs.
+ * Cloud Run volume file → YTDLP_COOKIES_B64 env → YTDLP_COOKIES_FILE → URL → YTDLP_COOKIES
+ * Volume mounts are re-read every call so `gcloud secrets versions add` applies without redeploy.
  */
 async function ensureYoutubeCookiesArgs() {
-  if (cookiesReady) return cookiesReady
-  cookiesReady = (async () => {
+  const b64Source = readCookiesB64Source()
+  // Env B64 is fixed for the process lifetime; volume files can change in place.
+  if (cookiesReady && b64Source?.via !== 'volume') return cookiesReady
+
+  const resolve = async () => {
     try {
-      const b64Raw = process.env.YTDLP_COOKIES_B64
-      const b64 = b64Raw?.trim()
       console.log('[cookies] resolve start', {
-        YTDLP_COOKIES_B64: describeB64Env(b64Raw),
+        YTDLP_COOKIES_B64: describeB64Env(b64Source?.via === 'env' ? b64Source.raw : process.env.YTDLP_COOKIES_B64),
+        YTDLP_COOKIES_B64_FILE: b64Source?.via === 'volume' ? b64Source.path : (process.env.YTDLP_COOKIES_B64_FILE || null),
+        volumeCandidates: cookiesB64VolumeCandidates(),
         YTDLP_COOKIES_FILE: Boolean(process.env.YTDLP_COOKIES_FILE),
         YTDLP_COOKIES_URL: Boolean(process.env.YTDLP_COOKIES_URL?.trim()),
         YTDLP_COOKIES: Boolean(process.env.YTDLP_COOKIES?.trim()),
         YTDLP_PROXY: Boolean((process.env.YTDLP_PROXY || '').trim()),
       })
-      if (b64) {
-        const compact = b64.replace(/\s+/g, '')
-        let decoded
-        try {
-          decoded = Buffer.from(compact, 'base64').toString('utf8')
-        } catch (error) {
-          console.error('[cookies] YTDLP_COOKIES_B64 base64 decode failed', String(error?.message || error))
-          throw error
-        }
-        console.log('[cookies] YTDLP_COOKIES_B64 decoded', describeCookieText(decoded))
-        if (!/youtube|google|googlevideo/i.test(decoded)) {
-          throw new Error(
-            'YTDLP_COOKIES_B64 non decodifica un file cookie YouTube. Incolla il contenuto di yt-cookies.b64 (non il .txt).',
-          )
-        }
-        const args = ['--cookies', writeCookiesFile(decoded, 'b64')]
-        console.log('[cookies] using source=b64', cookiesMeta)
+      if (b64Source) {
+        const decoded = decodeCookiesB64(b64Source.raw, b64Source.via)
+        const sourceTag = b64Source.via === 'volume' ? 'b64-volume' : 'b64'
+        const args = ['--cookies', writeCookiesFile(decoded, sourceTag)]
+        console.log(`[cookies] using source=${sourceTag}`, { ...cookiesMeta, path: b64Source.path })
         return args
       }
       if (process.env.YTDLP_COOKIES_FILE && existsSync(process.env.YTDLP_COOKIES_FILE)) {
@@ -496,7 +548,10 @@ async function ensureYoutubeCookiesArgs() {
       cookiesReady = null
       throw error
     }
-  })()
+  }
+
+  if (b64Source?.via === 'volume') return resolve()
+  cookiesReady = resolve()
   return cookiesReady
 }
 
@@ -884,6 +939,8 @@ server.listen(port, '0.0.0.0', () => {
   }
   console.log('[cookies] boot env', {
     YTDLP_COOKIES_B64: describeB64Env(process.env.YTDLP_COOKIES_B64),
+    YTDLP_COOKIES_B64_FILE: process.env.YTDLP_COOKIES_B64_FILE || process.env.YTDLP_COOKIES_B64_PATH || null,
+    volumeCandidates: cookiesB64VolumeCandidates().map((p) => ({ path: p, exists: existsSync(p) })),
     YTDLP_COOKIES_FILE: process.env.YTDLP_COOKIES_FILE || null,
     YTDLP_COOKIES_URL: Boolean(process.env.YTDLP_COOKIES_URL?.trim()),
     YTDLP_COOKIES: Boolean(process.env.YTDLP_COOKIES?.trim()),

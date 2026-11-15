@@ -51,13 +51,13 @@ YouTube often blocks datacenter IPs. There is no fully automatic bypass inside t
 
    The script **filters** to YouTube hosts only and writes **`yt-cookies.b64`** (one line).
 
-   Prefer **`YTDLP_COOKIES_B64`** (single line) over multiline `YTDLP_COOKIES` (tabs/newlines often get corrupted in cloud secret UIs):
+   Prefer Secret Manager + a Cloud Run **volume** mount of **`YTDLP_COOKIES_B64`** (file content = one-line base64 from `yt-cookies.b64`). Set **`YTDLP_COOKIES_B64_FILE`** to the mount path (default probe: `/secrets/YTDLP_COOKIES_B64`). The app prefers the volume file when present, then falls back to env `YTDLP_COOKIES_B64` for local servers.
 
-   1. Delete `YTDLP_COOKIES` if present  
-   2. Set **`YTDLP_COOKIES_B64`** from `yt-cookies.b64`, or run **`npm run cookies:export -- remote`** (`gcloud secrets versions add`, project/secret from `.env`)  
-   3. Redeploy / restart Cloud Run if a warm instance still has the old value  
+   1. Mount the secret as a volume (`:latest`); remove the env binding on Cloud Run if both were set  
+   2. Refresh with **`npm run cookies:export -- remote`** → `gcloud secrets versions add … --data-file=yt-cookies.b64` (no redeploy)  
+   3. Next download re-reads the volume file (`source: b64-volume`)  
 
-   `GET /api/health` must show `"source":"b64"` and `"ok":true`. Alternatives: `YTDLP_COOKIES_URL` or `YTDLP_COOKIES_FILE`. Do not commit cookie files or `.env`.
+   Local `npm run dev` / `npm start`: use env `YTDLP_COOKIES_B64`, Netscape `YTDLP_COOKIES_FILE`, or `YTDLP_COOKIES_URL` as before. Do not commit cookie files or `.env`.
 
 2. **Residential proxy (unattended)** — set **`YTDLP_PROXY`** (or `HTTPS_PROXY`) to an HTTP/SOCKS proxy URL so yt-dlp exits through a non-datacenter IP. Best option if you want links to keep working without refreshing cookies.
 
