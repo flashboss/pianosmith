@@ -196,6 +196,22 @@
           <nav id="library-path" class="library-path" data-i18n-aria-label="libraryPath" aria-label="Folder path"></nav>
           <div class="library-toolbar">
             <button id="library-new-folder" type="button" class="ghost" data-i18n="newFolder">New folder</button>
+            <button
+              id="library-sync-open"
+              type="button"
+              class="ghost library-sync-gear"
+              data-i18n-aria-label="syncOptions"
+              aria-label="Sync options"
+              aria-expanded="false"
+              aria-controls="library-sync-panel"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.23-1.12.54-1.62.94l-2.4-.96a.5.5 0 0 0-.6.22L2.77 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.43.34.68.24l2.39-.96c.5.4 1.04.72 1.62.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.58-.22 1.12-.54 1.63-.94l2.39.96c.25.1.54 0 .68-.24l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+                />
+              </svg>
+            </button>
           </div>
           <form id="library-folder-form" class="library-folder-form" hidden>
             <input
@@ -209,6 +225,51 @@
             <button type="submit" data-i18n="folderCreate">Create</button>
             <button id="library-folder-cancel" type="button" class="ghost" data-i18n="folderCancel">Cancel</button>
           </form>
+          <div id="library-sync-panel" class="library-sync-panel" hidden>
+            <h3 data-i18n="syncBridgeTitle">Device bridge</h3>
+            <p id="library-sync-bridge-status" class="hint" data-i18n="syncBridgeIdle">Bridge off</p>
+            <div class="library-sync-actions">
+              <button id="library-sync-bridge-host" type="button" data-i18n="syncBridgeHost">Display: create code</button>
+              <button id="library-sync-bridge-stop" type="button" class="ghost" data-i18n="syncBridgeStop">Stop bridge</button>
+            </div>
+            <label class="library-sync-bridge-join">
+              <span data-i18n="syncBridgeJoin">Send library</span>
+              <div class="library-sync-bridge-row">
+                <input
+                  id="library-sync-bridge-code"
+                  type="text"
+                  maxlength="6"
+                  autocomplete="off"
+                  spellcheck="false"
+                  data-i18n-placeholder="syncBridgeCodePh"
+                  placeholder="Ab12"
+                />
+                <button id="library-sync-bridge-send" type="button" data-i18n="syncBridgeSend">Send</button>
+              </div>
+            </label>
+            <p class="hint" data-i18n="syncBridgeHint">
+              Same Server as the MIDI bridge. On the TV create a code; on the other device enter it and send the saved songs.
+            </p>
+
+            <h3 data-i18n="syncTitle">Shared folder</h3>
+            <p id="library-sync-folder" class="hint" data-i18n="syncFolderNone">No shared folder linked.</p>
+            <p id="library-sync-last" class="hint"></p>
+            <p id="library-sync-unsupported" class="hint" hidden data-i18n="syncUnsupported">
+              Shared-folder sync needs Chrome or Edge on a computer.
+            </p>
+            <div class="library-sync-actions library-sync-folder-actions">
+              <button id="library-sync-choose" type="button" data-i18n="syncChooseFolder">Choose folder</button>
+              <button id="library-sync-now" type="button" class="ghost" data-i18n="syncNow">Sync now</button>
+              <button id="library-sync-disconnect" type="button" class="ghost" data-i18n="syncDisconnect">Disconnect</button>
+            </div>
+            <label class="library-sync-auto">
+              <input id="library-sync-auto" type="checkbox" />
+              <span data-i18n="syncAuto">Sync automatically after saving a song</span>
+            </label>
+            <p class="hint" data-i18n="syncHint">
+              Pick a shared folder (Drive, Dropbox, network share…). Devices that use the same folder can exchange saved songs.
+            </p>
+          </div>
           <div id="library-loading" class="library-loading" hidden data-i18n-aria-label="libraryLoading" aria-label="Loading saved songs" aria-live="polite">
             <span class="library-spinner" aria-hidden="true"></span>
             <span data-i18n="libraryLoading">Loading saved songs…</span>

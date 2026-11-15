@@ -30,6 +30,17 @@ import {
   saveLibrarySong,
   type LibrarySongMeta,
 } from './library'
+import { LibraryBridge } from './library-bridge'
+import {
+  chooseSyncFolder,
+  disconnectSyncFolder,
+  getSyncStatus,
+  isSyncAutoEnabled,
+  restoreSyncLink,
+  setSyncAuto,
+  syncLibrary,
+  type SyncStatus,
+} from './library-sync'
 import { isMidiFile, notesFromMidi, songToMidiBlob } from './midi'
 import { MidiBridge } from './midi-bridge'
 import { MidiInput } from './midi-input'
@@ -119,8 +130,25 @@ const libraryBrowser = el<HTMLUListElement>('library-browser')
 const libraryEmpty = el<HTMLParagraphElement>('library-empty')
 const libraryLoading = el<HTMLDivElement>('library-loading')
 const libraryNewFolderBtn = el<HTMLButtonElement>('library-new-folder')
+const librarySyncOpenBtn = el<HTMLButtonElement>('library-sync-open')
+const librarySyncPanel = el<HTMLDivElement>('library-sync-panel')
+const librarySyncFolder = el<HTMLParagraphElement>('library-sync-folder')
+const librarySyncLast = el<HTMLParagraphElement>('library-sync-last')
+const librarySyncUnsupported = el<HTMLParagraphElement>('library-sync-unsupported')
+const librarySyncChooseBtn = el<HTMLButtonElement>('library-sync-choose')
+const librarySyncNowBtn = el<HTMLButtonElement>('library-sync-now')
+const librarySyncDisconnectBtn = el<HTMLButtonElement>('library-sync-disconnect')
+const librarySyncAuto = el<HTMLInputElement>('library-sync-auto')
+const librarySyncBridgeStatus = el<HTMLParagraphElement>('library-sync-bridge-status')
+const librarySyncBridgeHostBtn = el<HTMLButtonElement>('library-sync-bridge-host')
+const librarySyncBridgeStopBtn = el<HTMLButtonElement>('library-sync-bridge-stop')
+const librarySyncBridgeCode = el<HTMLInputElement>('library-sync-bridge-code')
+const librarySyncBridgeSendBtn = el<HTMLButtonElement>('library-sync-bridge-send')
 const libraryFolderForm = el<HTMLFormElement>('library-folder-form')
 const libraryFolderName = el<HTMLInputElement>('library-folder-name')
+const libraryBridge = new LibraryBridge()
+let librarySyncBusy = false
+let libraryBridgePulling = false
 const exitModal = el<HTMLDivElement>('exit-modal')
 const exitCard = el<HTMLDivElement>('exit-card')
 const exitCancelBtn = el<HTMLButtonElement>('exit-cancel')
@@ -665,6 +693,9 @@ async function rememberSong(input: {
     await saveLibrarySong(input)
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
+    if (isSyncAutoEnabled()) {
+      void runLibrarySync({ quiet: true })
+    }
   } catch (error) {
     console.error(error)
   }
@@ -699,10 +730,129 @@ function hideFolderForm() {
 }
 
 function showFolderForm() {
+  hideSyncPanel()
   libraryFolderForm.hidden = false
   libraryNewFolderBtn.hidden = true
   libraryFolderName.focus()
   libraryFolderName.select()
+}
+
+function formatSyncWhen(at: number | null): string {
+  if (!at) return t('syncNever')
+  try {
+    return new Date(at).toLocaleString()
+  } catch {
+    return t('syncNever')
+  }
+}
+
+function renderSyncBridgeStatus(kind: string = libraryBridge.listening ? 'listen' : 'idle') {
+  if (kind === 'listen' && libraryBridge.code) {
+    librarySyncBridgeStatus.textContent = t('syncBridgeWaiting', { code: libraryBridge.code })
+    return
+  }
+  if (kind === 'ready' && libraryBridge.code) {
+    librarySyncBridgeStatus.textContent = t('syncBridgeListening', { code: libraryBridge.code })
+    return
+  }
+  if (kind === 'package') {
+    librarySyncBridgeStatus.textContent = t('syncBridgeReceiving')
+    return
+  }
+  if (kind === 'error') {
+    librarySyncBridgeStatus.textContent = t('syncBridgeError')
+    return
+  }
+  librarySyncBridgeStatus.textContent = t('syncBridgeIdle')
+}
+
+function renderSyncStatus(status: SyncStatus = getSyncStatus()) {
+  librarySyncUnsupported.hidden = status.supported
+  librarySyncChooseBtn.disabled = !status.supported || librarySyncBusy
+  librarySyncNowBtn.disabled = !status.linked || !status.supported || librarySyncBusy
+  librarySyncDisconnectBtn.disabled = !status.linked || librarySyncBusy
+  librarySyncAuto.checked = status.auto
+  librarySyncAuto.disabled = !status.supported
+  librarySyncBridgeHostBtn.disabled = librarySyncBusy || libraryBridgePulling
+  librarySyncBridgeSendBtn.disabled = librarySyncBusy || libraryBridgePulling
+  librarySyncBridgeStopBtn.disabled = !libraryBridge.listening && !libraryBridge.code
+  librarySyncFolder.textContent = status.linked
+    ? t('syncFolderLinked', { name: status.folderName || t('syncFolder') })
+    : t('syncFolderNone')
+  librarySyncLast.textContent = status.linked
+    ? t('syncLast', { when: formatSyncWhen(status.lastAt) })
+    : ''
+  librarySyncLast.hidden = !status.linked
+  if (libraryBridge.listening) renderSyncBridgeStatus('listen')
+}
+
+async function pullLibraryBridge(code: string) {
+  if (libraryBridgePulling) return
+  libraryBridgePulling = true
+  renderSyncStatus()
+  renderSyncBridgeStatus('package')
+  try {
+    const result = await libraryBridge.pullLibrary(code)
+    await refreshLibraryButton()
+    if (!libraryModal.hidden) await renderLibraryBrowser()
+    toast(t('syncBridgeReceived', { n: result.pulled }))
+    renderSyncBridgeStatus(libraryBridge.listening ? 'ready' : 'idle')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : t('syncBridgeFail'))
+    renderSyncBridgeStatus('error')
+  } finally {
+    libraryBridgePulling = false
+    renderSyncStatus()
+  }
+}
+
+function stopLibraryBridge() {
+  libraryBridge.stop()
+  renderSyncBridgeStatus('idle')
+  renderSyncStatus()
+}
+
+function hideSyncPanel() {
+  librarySyncPanel.hidden = true
+  librarySyncOpenBtn.setAttribute('aria-expanded', 'false')
+}
+
+function showSyncPanel() {
+  hideFolderForm()
+  librarySyncPanel.hidden = false
+  librarySyncOpenBtn.setAttribute('aria-expanded', 'true')
+  renderSyncStatus()
+  void restoreSyncLink().then(renderSyncStatus).catch(() => {
+    renderSyncStatus()
+  })
+}
+
+function toggleSyncPanel() {
+  if (librarySyncPanel.hidden) showSyncPanel()
+  else hideSyncPanel()
+}
+
+async function runLibrarySync(options: { quiet?: boolean } = {}) {
+  if (librarySyncBusy) return
+  librarySyncBusy = true
+  renderSyncStatus()
+  try {
+    if (!options.quiet) toast(t('syncBusy'))
+    const result = await syncLibrary()
+    renderSyncStatus(getSyncStatus())
+    await refreshLibraryButton()
+    if (!libraryModal.hidden) await renderLibraryBrowser()
+    if (!options.quiet || result.pulled > 0 || result.pushed > 0) {
+      toast(t('syncDone', { pulled: result.pulled, pushed: result.pushed }))
+    }
+  } catch (error) {
+    if (!options.quiet) toast(error instanceof Error ? error.message : t('syncFail'))
+    else console.error(error)
+    renderSyncStatus()
+  } finally {
+    librarySyncBusy = false
+    renderSyncStatus()
+  }
 }
 
 function renderLibraryPath(path: Array<{ id: string; name: string }>) {
@@ -842,10 +992,12 @@ function focusLibraryBrowserContents() {
 
 async function openLibraryModal() {
   hideFolderForm()
+  hideSyncPanel()
   libraryModal.hidden = false
   libraryDrag.snap()
   await refreshLibraryButton()
   await renderLibraryBrowser()
+  void restoreSyncLink().then(renderSyncStatus).catch(() => undefined)
   libraryOpenBtn.setAttribute('aria-expanded', 'true')
   queueMicrotask(ensureTvFocus)
 }
@@ -853,6 +1005,7 @@ async function openLibraryModal() {
 function closeLibraryModal() {
   libraryModal.hidden = true
   hideFolderForm()
+  hideSyncPanel()
   libraryOpenBtn.setAttribute('aria-expanded', 'false')
   libraryDrag.stopDrag()
 }
@@ -1203,6 +1356,84 @@ libraryBrowser.addEventListener('change', (event) => {
 
 libraryNewFolderBtn.addEventListener('click', showFolderForm)
 el<HTMLButtonElement>('library-folder-cancel').addEventListener('click', hideFolderForm)
+librarySyncOpenBtn.addEventListener('click', toggleSyncPanel)
+librarySyncChooseBtn.addEventListener('click', () => {
+  void chooseSyncFolder()
+    .then((status) => {
+      renderSyncStatus(status)
+      toast(t('syncFolderLinked', { name: status.folderName || t('syncFolder') }))
+    })
+    .catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      toast(error instanceof Error ? error.message : t('syncFail'))
+      renderSyncStatus()
+    })
+})
+librarySyncNowBtn.addEventListener('click', () => {
+  void runLibrarySync()
+})
+librarySyncDisconnectBtn.addEventListener('click', () => {
+  void disconnectSyncFolder()
+    .then((status) => {
+      renderSyncStatus(status)
+      toast(t('syncFolderNone'))
+    })
+    .catch((error: unknown) => {
+      toast(error instanceof Error ? error.message : t('syncFail'))
+    })
+})
+librarySyncAuto.addEventListener('change', () => {
+  setSyncAuto(librarySyncAuto.checked)
+  renderSyncStatus()
+})
+
+libraryBridge.setHandlers({
+  onStatus: (kind) => renderSyncBridgeStatus(kind),
+  onReady: (code) => {
+    void pullLibraryBridge(code)
+  },
+})
+
+librarySyncBridgeHostBtn.addEventListener('click', () => {
+  void (async () => {
+    try {
+      const code = await libraryBridge.createRoom()
+      librarySyncBridgeCode.value = code
+      libraryBridge.listen(code)
+      renderSyncBridgeStatus('listen')
+      renderSyncStatus()
+      toast(t('syncBridgeWaiting', { code }))
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('syncBridgeFail'))
+      renderSyncBridgeStatus('error')
+    }
+  })()
+})
+
+librarySyncBridgeStopBtn.addEventListener('click', () => {
+  stopLibraryBridge()
+})
+
+librarySyncBridgeSendBtn.addEventListener('click', () => {
+  const code = librarySyncBridgeCode.value
+  void (async () => {
+    librarySyncBusy = true
+    renderSyncStatus()
+    try {
+      toast(t('syncBridgeSending'))
+      const result = await libraryBridge.pushLibrary(code)
+      toast(t('syncBridgeSent', { n: result.songs }))
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('syncBridgeFail'))
+    } finally {
+      librarySyncBusy = false
+      renderSyncStatus()
+    }
+  })()
+})
+
+renderSyncStatus()
+renderSyncBridgeStatus('idle')
 
 libraryFolderForm.addEventListener('submit', (event) => {
   event.preventDefault()
@@ -1210,6 +1441,7 @@ libraryFolderForm.addEventListener('submit', (event) => {
     .then(async () => {
       hideFolderForm()
       await renderLibraryBrowser()
+      if (isSyncAutoEnabled()) void runLibrarySync({ quiet: true })
     })
     .catch((error: unknown) => {
       toast(error instanceof Error ? error.message : t('createFolderFail'))

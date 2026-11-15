@@ -5,6 +5,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { handleLibraryBridge } from './library-bridge.mjs'
 import { handleMidiBridge } from './midi-bridge.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -677,13 +678,14 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
     })
     res.end()
     return
   }
   try {
     if (await handleMidiBridge(req, res, url, sendJson, readBody)) return
+    if (await handleLibraryBridge(req, res, url, sendJson)) return
     if (url.pathname === '/api/health') {
       const ytdlp = await ytdlpAvailable()
       try {

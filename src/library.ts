@@ -2,11 +2,14 @@ import { localeTag, t } from './i18n'
 import type { RawNote } from './types'
 
 const DB_NAME = 'pianosmith'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const SONGS = 'songs'
 const FOLDERS = 'folders'
+const SYNC = 'sync'
 const MAX_SONGS = 40
 const MAX_BYTES = 220 * 1024 * 1024
+
+export const SYNC_DIR_KEY = 'directory'
 
 export const ROOT_FOLDER_ID = ''
 
@@ -68,6 +71,9 @@ function openDb(): Promise<IDBDatabase> {
         const folders = db.createObjectStore(FOLDERS, { keyPath: 'id' })
         folders.createIndex('parentId', 'parentId')
         folders.createIndex('updatedAt', 'updatedAt')
+      }
+      if (!db.objectStoreNames.contains(SYNC)) {
+        db.createObjectStore(SYNC)
       }
     }
     request.onsuccess = async () => {
@@ -168,6 +174,71 @@ export async function listLibrarySongs(folderId = ROOT_FOLDER_ID): Promise<Libra
       .map(toMeta)
       .filter((row) => (row.folderId || ROOT_FOLDER_ID) === folderId)
       .sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, 'it'))
+  })
+}
+
+export async function listAllLibrarySongs(): Promise<LibrarySong[]> {
+  return withDb(async (db) => {
+    const tx = db.transaction(SONGS, 'readonly')
+    const rows = (await requestToPromise(tx.objectStore(SONGS).getAll())) as LibrarySong[]
+    await txDone(tx)
+    return rows
+      .map((row) => ({ ...row, folderId: row.folderId || ROOT_FOLDER_ID }))
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, localeTag()))
+  })
+}
+
+export async function putLibrarySong(song: LibrarySong): Promise<LibrarySongMeta> {
+  return withDb(async (db) => {
+    const tx = db.transaction(SONGS, 'readwrite')
+    const store = tx.objectStore(SONGS)
+    const next: LibrarySong = {
+      ...song,
+      folderId: song.folderId || ROOT_FOLDER_ID,
+      bytes: song.data.byteLength,
+      notes: song.notes.map((note) => ({
+        midi: note.midi,
+        start: note.start,
+        end: note.end,
+        velocity: note.velocity,
+      })),
+    }
+    store.put(next)
+    await prune(store, next.id)
+    await txDone(tx)
+    return toMeta(next)
+  })
+}
+
+export async function upsertFolder(folder: LibraryFolder): Promise<void> {
+  await withDb(async (db) => {
+    const tx = db.transaction(FOLDERS, 'readwrite')
+    tx.objectStore(FOLDERS).put({
+      ...folder,
+      parentId: folder.parentId || ROOT_FOLDER_ID,
+      name: cleanName(folder.name) || folder.name,
+    })
+    await txDone(tx)
+  })
+}
+
+export async function getSyncDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
+  return withDb(async (db) => {
+    if (!db.objectStoreNames.contains(SYNC)) return null
+    const tx = db.transaction(SYNC, 'readonly')
+    const row = await requestToPromise(tx.objectStore(SYNC).get(SYNC_DIR_KEY))
+    await txDone(tx)
+    return (row as FileSystemDirectoryHandle | undefined) || null
+  })
+}
+
+export async function setSyncDirectoryHandle(handle: FileSystemDirectoryHandle | null): Promise<void> {
+  await withDb(async (db) => {
+    const tx = db.transaction(SYNC, 'readwrite')
+    const store = tx.objectStore(SYNC)
+    if (handle) store.put(handle, SYNC_DIR_KEY)
+    else store.delete(SYNC_DIR_KEY)
+    await txDone(tx)
   })
 }
 
