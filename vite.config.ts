@@ -7,6 +7,8 @@ export default defineConfig({
     port: 5173,
   },
   build: {
+    outDir: 'www',
+    emptyOutDir: true,
     target: 'es2020',
     chunkSizeWarningLimit: 2500,
   },

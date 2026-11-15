@@ -3,7 +3,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 const config: CapacitorConfig = {
   appId: 'com.pianosmith.app',
   appName: 'PianoSmith',
-  webDir: 'dist',
+  webDir: 'www',
   android: {
     allowMixedContent: true,
   },

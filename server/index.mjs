@@ -349,18 +349,18 @@ async function downloadFromLink(input) {
 let busy = false
 
 function serveStatic(req, res) {
-  const dist = path.join(root, 'dist')
+  const webRoot = path.join(root, 'www')
   const urlPath = decodeURIComponent((req.url || '/').split('?')[0])
   let relative = path.normalize(urlPath).replace(/^(\.\.(\/|\\|$))+/, '')
   if (relative === '/' || relative === path.sep) relative = '/index.html'
-  let filePath = path.join(dist, relative)
-  if (!filePath.startsWith(dist)) {
+  let filePath = path.join(webRoot, relative)
+  if (!filePath.startsWith(webRoot)) {
     res.writeHead(403)
     res.end()
     return
   }
   if (!existsSync(filePath) || statSync(filePath).isDirectory()) {
-    filePath = path.join(dist, 'index.html')
+    filePath = path.join(webRoot, 'index.html')
   }
   if (!existsSync(filePath)) {
     sendJson(res, 404, { message: 'Build mancante. Esegui npm run build.' })

@@ -70,12 +70,21 @@ export function linkSourceName(input: string): string {
   return host
 }
 
+/** Link/search API host when the UI is on static GitHub Pages (no Node server). */
 const FALLBACK_SERVER = 'https://pianosmith-40961844406.europe-west1.run.app'
+
+function isStaticPagesHost(hostname: string): boolean {
+  const host = hostname.replace(/^www\./, '').toLowerCase()
+  return host === 'pianosmith.vige.it' || host.endsWith('.github.io')
+}
 
 export function defaultServerOrigin(): string {
   try {
-    const origin = window.location.origin.replace(/\/$/, '')
-    if (origin && origin !== 'null' && /^https?:\/\//i.test(origin)) return origin
+    const { hostname, origin } = window.location
+    // Pages serves only the SPA under /app/; /api/* still needs Cloud Run (or another Node host).
+    if (isStaticPagesHost(hostname)) return FALLBACK_SERVER
+    const cleaned = origin.replace(/\/$/, '')
+    if (cleaned && cleaned !== 'null' && /^https?:\/\//i.test(cleaned)) return cleaned
   } catch {
     /* ignore */
   }

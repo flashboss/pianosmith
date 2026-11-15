@@ -2,11 +2,11 @@
 
 PianoSmith turns a music file, a MIDI file, or a shared music link into a piano tutorial: notes fall toward the keyboard, the keys light up, and two hands play at the bottom. The picture you see is what the exported video contains.
 
-Project site: https://pianosmith.vige.it/ (GitHub Pages, custom domain).
+Project site: https://pianosmith.vige.it/ (GitHub Pages, custom domain). The playable app is at **https://pianosmith.vige.it/app/** (`docs/app/`, produced by `npm run build`).
 
 In the repo settings, set Pages to deploy from the `main` branch `/docs` folder. The `docs/CNAME` file points the site to `pianosmith.vige.it`.
 
-Transcription runs on the device with [Spotify Basic Pitch](https://github.com/spotify/basic-pitch) (Apache-2.0). Audio and MIDI never need a server. Direct audio and MIDI files (MP3, WAV, FLAC, M4A, AAC, OGG, Opus, WebM, AIFF, WMA, MIDI) are fetched as files. Shared catalogue search and `archive.org/details/…` links use the [Internet Archive](https://archive.org/) APIs (no YouTube, no cookies, no yt-dlp). A Spotify link is resolved from public embed metadata (title, artist, duration), then matched to an Archive recording by duration, because the Spotify stream itself is not available.
+Transcription runs on the device with [Spotify Basic Pitch](https://github.com/spotify/basic-pitch) (Apache-2.0). Audio and MIDI never need a server. Direct audio and MIDI files (MP3, WAV, FLAC, M4A, AAC, OGG, Opus, WebM, AIFF, WMA, MIDI) are fetched as files. Shared catalogue search and `archive.org/details/…` links use the [Internet Archive](https://archive.org/) APIs via the optional Node host (Cloud Run). A Spotify link is resolved from public embed metadata, then matched to an Archive recording by duration.
 
 ## Run on the web
 
@@ -24,30 +24,25 @@ npm run build
 npm start
 ```
 
-## Remote server (Docker / Cloud Run)
+## GitHub Pages app
 
-GitHub Pages (`pianosmith.vige.it`) only hosts the static marketing site. The full app runs on **Google Cloud Run** at:
+`npm run build` writes the playable SPA to **`docs/app/`** (base `/app/`) and a relative-base copy to gitignored **`www/`** for Tizen/Android. Commit `docs/app/` so Pages serves https://pianosmith.vige.it/app/. The landing **Get started** button links to `/app/`.
 
-https://pianosmith-40961844406.europe-west1.run.app/
+On that static host the UI defaults **Server** to the optional Cloud Run API host so Archive search/download still work. Packaged Tizen/Android builds do the same when they have no usable page origin.
 
-Phones and TVs use that host for shared music links (and as the default **Server** in the Tizen/Android builds). The root **`Dockerfile`** builds a slim Node image (no yt-dlp/ffmpeg): `npm ci`, **`npm run build`**, `npm start`.
+## Local API server
 
-Deploy with that Dockerfile to Cloud Run (or another host). After deploy, open the public URL and leave the in-app **Server** field empty when the UI and API are on the same origin. Check `GET /api/health` — it should report `"archive": true`. You can remove any old `YTDLP_COOKIES_*` secrets from the service.
-
-```bash
-docker build -t pianosmith .
-docker run --rm -p 8080:8080 -e PORT=8080 pianosmith
-```
+`npm run dev` / `npm start` run the Node host (`/api/link`, `/api/search`, MIDI bridge) and, in production mode, serve `www/`. For Archive links from the Pages app you can still point **Server** at a deployed Node instance (e.g. Cloud Run) if you keep one.
 
 ## Samsung Tizen TV
 
-The TV build is a web widget staged in `tizen-app/` by `npm run build`.
+The TV build is a web widget staged in `tizen-app/` by `npm run build` (from `www/`).
 
 ```bash
 TV_IP=192.168.0.165 ./scripts/tizen-install.sh
 ```
 
-That requires the Tizen Studio CLI (`tizen`, `sdb`) and a TV certificate profile. Local audio and MIDI **files** work inside the widget. For shared links, set **Server** in the app to your Cloud Run URL or `http://<computer>:5173` (the packaged TV UI defaults to the Cloud Run host when it has no usable page origin).
+That requires the Tizen Studio CLI (`tizen`, `sdb`) and a TV certificate profile. Local audio and MIDI **files** work inside the widget. For shared links, set **Server** in the app to your API host or `http://<computer>:5173` (the packaged TV UI defaults to the Cloud Run host when it has no usable page origin).
 
 The package id is `PianoSmith` and the app id is `PianoSmith.player`.
 

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <title>PianoSmith</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <script type="module" crossorigin src="/app/assets/index-BOrrhydS.js"></script>
+    <link rel="stylesheet" crossorigin href="/app/assets/index-B5lb-NGC.css">
+  </head>
+  <body>
+    <canvas id="stage" data-i18n-aria-label="stageAria" aria-label="Piano tutorial"></canvas>
+    <div id="app">
+      <div id="topbar" hidden>
+        <div class="row">
+          <div class="brand">PianoSmith</div>
+          <div id="song-title"></div>
+          <div class="spacer"></div>
+          <span id="clock">0:00 / 0:00</span>
+          <button id="seek-back" type="button" data-i18n-aria-label="seekBack" aria-label="Back">−</button>
+          <button id="play" type="button" data-i18n="play">Play</button>
+          <button id="seek-forward" type="button" data-i18n-aria-label="seekForward" aria-label="Forward">+</button>
+          <button id="seek-step" type="button" data-i18n-aria-label="seekStep" aria-label="Seek step">2s</button>
+          <button id="settings-open" type="button" data-i18n="options" aria-haspopup="dialog" aria-controls="settings-modal">Options</button>
+          <button id="reset" type="button" data-i18n="newSong">New</button>
+        </div>
+        <div class="scrub-wrap">
+          <div id="loop-band" class="loop-band" hidden></div>
+          <input id="scrub" type="range" min="0" max="1000" value="0" step="1" data-i18n-aria-label="scrub" aria-label="Position" />
+        </div>
+      </div>
+
+      <div id="gate">
+        <form id="panel">
+          <button id="gate-close" type="button" class="ghost" hidden data-i18n-aria-label="closeSong" aria-label="Back to the song">×</button>
+          <div class="modal-drag gate-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
+            <h1>PianoSmith</h1>
+          </div>
+          <p class="lead" data-i18n="lead">
+            From an audio file or a link, create a tutorial with falling notes and two hands on the piano.
+          </p>
+          <label id="drop" class="drop">
+            <input id="file" type="file" accept="audio/*,.mid,.midi,.mp3,.wav,.ogg,.flac,.m4a,.aac,.webm" />
+            <strong data-i18n="dropTitle">Drop or select an audio or MIDI file</strong>
+            <span data-i18n="dropHint">MP3, WAV, M4A, FLAC, or MIDI</span>
+          </label>
+          <div class="yt">
+            <input
+              id="yt"
+              type="search"
+              inputmode="search"
+              data-i18n-placeholder="songLink"
+              data-i18n-aria-label="songLink"
+              placeholder="Song link or search"
+              autocomplete="off"
+              aria-label="Song link or search"
+              aria-autocomplete="list"
+              aria-controls="yt-results"
+            />
+            <button id="yt-go" type="submit" data-i18n="create">Create</button>
+          </div>
+          <p id="link-kind" class="hint"></p>
+          <ul id="yt-results" class="yt-results" hidden role="listbox" data-i18n-aria-label="searchResults" aria-label="Search results"></ul>
+          <p id="yt-hint" class="hint"></p>
+          <button id="demo" type="button" class="ghost wide" data-i18n="watchDemo">Watch the demo</button>
+          <button id="library-open" type="button" class="ghost wide" data-i18n="savedSongs">Saved songs</button>
+          <details>
+            <summary data-i18n="tvPhoneServer">TV, devices, and server</summary>
+            <label class="server">
+              <span data-i18n="server">Server</span>
+              <input id="server" type="url" placeholder="https://example.com" autocomplete="off" />
+            </label>
+            <p class="hint" data-i18n="serverHint">
+              Audio and MIDI files work on this device. Server defaults to this page’s address; change it only if the TV or other devices must use another host.
+            </p>
+            <p class="midi-bridge-title" data-i18n="midiBridgeTitle">MIDI keyboard bridge</p>
+            <p id="midi-bridge-status" class="hint" data-i18n="midiBridgeIdle">MIDI bridge off</p>
+            <div class="midi-bridge-actions">
+              <button id="midi-bridge-host" type="button" class="ghost" data-i18n="midiBridgeHost">Display: create code</button>
+              <button id="midi-bridge-stop" type="button" class="ghost" data-i18n="midiBridgeStop">Stop bridge</button>
+            </div>
+            <label class="server midi-bridge-join">
+              <span data-i18n="midiBridgeJoin">Device code</span>
+              <div class="midi-bridge-row">
+                <input
+                  id="midi-bridge-code"
+                  type="text"
+                  maxlength="6"
+                  autocomplete="off"
+                  spellcheck="false"
+                  data-i18n-placeholder="midiBridgeCodePh"
+                  placeholder="Ab12"
+                />
+                <button id="midi-bridge-join" type="button" data-i18n="midiBridgeConnect">Connect</button>
+              </div>
+            </label>
+            <p class="hint" data-i18n="midiBridgeHint">
+              On the display device create a code. On the other device, from home, enter the code and plug in the keyboard.
+            </p>
+          </details>
+        </form>
+      </div>
+
+      <div id="status" hidden>
+        <div class="card">
+          <p id="status-text" data-i18n="statusDefault">Transcribing…</p>
+          <div class="bar"><div id="status-fill"></div></div>
+          <button id="cancel" type="button" class="ghost" data-i18n="cancel">Cancel</button>
+        </div>
+      </div>
+
+      <button id="center-play" type="button" hidden data-i18n-aria-label="play" aria-label="Play">▶</button>
+      <div id="rec" hidden>REC</div>
+      <div id="toast" hidden></div>
+      <div id="rotate" data-i18n="rotate">Rotate the device to landscape</div>
+
+      <div id="settings-modal" class="modal modal-float" hidden>
+        <div class="modal-backdrop"></div>
+        <div id="settings-card" class="modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <div class="modal-head modal-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
+            <h2 id="settings-title" data-i18n="settingsTitle">Options</h2>
+            <button id="settings-close" type="button" class="ghost" data-settings="close" data-i18n-aria-label="close" aria-label="Close">×</button>
+          </div>
+          <section class="settings-section" data-i18n-aria-label="display" aria-label="Display">
+            <h3 data-i18n="display">Display</h3>
+            <div class="settings-grid">
+              <button id="names" type="button" data-i18n="names" aria-pressed="false">Names</button>
+              <button id="hands" type="button" data-i18n="hands" aria-pressed="true">Hands</button>
+              <button id="zoom" type="button" data-i18n="zoom" aria-pressed="false">Zoom</button>
+              <button id="audio" type="button" data-i18n="audioOn" aria-pressed="true">Audio on</button>
+              <button id="sound-source" type="button" hidden data-i18n="soundOriginal">Original</button>
+              <button id="speed" type="button" data-i18n-aria-label="speed" aria-label="Speed">Velocità: 1×</button>
+            </div>
+            <p id="keys-count" class="settings-keys-count" data-i18n-aria-label="keys" aria-label="Keyboard keys">85 keys</p>
+            <div class="settings-keys" data-side="left">
+              <span class="settings-keys-label" data-i18n="keysLeft">Left (bass)</span>
+              <button id="keys-left-fewer" type="button" class="ghost" data-i18n-aria-label="keysLeftFewer" aria-label="Remove left key">−</button>
+              <button id="keys-left-more" type="button" class="ghost" data-i18n-aria-label="keysLeftMore" aria-label="Add left key">+</button>
+            </div>
+            <div class="settings-keys" data-side="right">
+              <span class="settings-keys-label" data-i18n="keysRight">Right (treble)</span>
+              <button id="keys-right-fewer" type="button" class="ghost" data-i18n-aria-label="keysRightFewer" aria-label="Remove right key">−</button>
+              <button id="keys-right-more" type="button" class="ghost" data-i18n-aria-label="keysRightMore" aria-label="Add right key">+</button>
+            </div>
+            <p id="keys-hint" class="hint" data-i18n="keysHint">Use −/+ on each side to remove or add keys from the bass (left) or treble (right).</p>
+          </section>
+          <section class="settings-section" data-i18n-aria-label="practice" aria-label="Practice">
+            <h3 data-i18n="practice">Practice</h3>
+            <p id="difficulty-label" class="settings-keys-count">Difficulty: 10</p>
+            <div class="settings-keys" data-side="difficulty">
+              <span class="settings-keys-label" data-i18n="difficulty">Difficulty</span>
+              <button id="difficulty-down" type="button" class="ghost" data-i18n-aria-label="difficultyDown" aria-label="Lower difficulty">−</button>
+              <button id="difficulty-up" type="button" class="ghost" data-i18n-aria-label="difficultyUp" aria-label="Raise difficulty">+</button>
+            </div>
+            <p id="difficulty-hint" class="hint" data-i18n="difficultyHint">At 10 every note is shown. Lower levels keep only the most important ones.</p>
+            <p id="loop-hint" class="hint" data-i18n="loopHint">Turn on Loop, then mark A and B at the current time to repeat a passage.</p>
+            <div class="settings-grid">
+              <button id="loop" type="button" data-i18n="loop" aria-pressed="false">Loop</button>
+              <button id="loop-clear" type="button" class="ghost" data-i18n="loopClear">Clear A–B</button>
+              <button id="loop-a" type="button" data-i18n="loopA">A · start</button>
+              <button id="loop-b" type="button" data-i18n="loopB">B · end</button>
+            </div>
+            <p id="loop-range" class="hint">Whole song</p>
+            <div class="settings-grid">
+              <button id="practice-wait" type="button" data-i18n="practiceWait" aria-pressed="false">Wait for keys</button>
+            </div>
+            <p id="practice-wait-status" class="settings-keys-count" hidden></p>
+            <p id="practice-wait-hint" class="hint" data-i18n="practiceWaitHint">
+              Playback pauses on each chord until you play those keys on a MIDI keyboard.
+            </p>
+            <p class="hint" data-i18n="midiBridgeFromHome">
+              To use a keyboard on another device, open New / home and connect under TV, devices, and server.
+            </p>
+          </section>
+          <section class="settings-section" data-i18n-aria-label="export" aria-label="Export">
+            <h3 data-i18n="export">Export</h3>
+            <div class="settings-grid">
+              <button id="midi" type="button">MIDI</button>
+              <button id="sheet" type="button" data-i18n="sheet">Sheet</button>
+              <button id="video" type="button" data-i18n="video">Video</button>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="library-modal" class="modal modal-float" hidden>
+        <div class="modal-backdrop"></div>
+        <div id="library-card" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="library-title">
+          <div class="modal-head modal-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
+            <h2 id="library-title" data-i18n="libraryTitle">Saved songs</h2>
+            <button id="library-close" type="button" class="ghost" data-library="close" data-i18n-aria-label="close" aria-label="Close">×</button>
+          </div>
+          <nav id="library-path" class="library-path" data-i18n-aria-label="libraryPath" aria-label="Folder path"></nav>
+          <div class="library-toolbar">
+            <button id="library-new-folder" type="button" class="ghost" data-i18n="newFolder">New folder</button>
+          </div>
+          <form id="library-folder-form" class="library-folder-form" hidden>
+            <input
+              id="library-folder-name"
+              type="text"
+              maxlength="80"
+              data-i18n-placeholder="folderName"
+              placeholder="Folder name"
+              autocomplete="off"
+            />
+            <button type="submit" data-i18n="folderCreate">Create</button>
+            <button id="library-folder-cancel" type="button" class="ghost" data-i18n="folderCancel">Cancel</button>
+          </form>
+          <div id="library-loading" class="library-loading" hidden data-i18n-aria-label="libraryLoading" aria-label="Loading saved songs" aria-live="polite">
+            <span class="library-spinner" aria-hidden="true"></span>
+            <span data-i18n="libraryLoading">Loading saved songs…</span>
+          </div>
+          <ul id="library-browser" class="library-browser"></ul>
+          <p id="library-empty" class="hint" hidden data-i18n="libraryEmpty">This folder is empty.</p>
+        </div>
+      </div>
+
+      <div id="exit-modal" class="modal modal-float" hidden>
+        <div class="modal-backdrop"></div>
+        <div id="exit-card" class="modal-card exit-card" role="dialog" aria-modal="true" aria-labelledby="exit-title" aria-describedby="exit-body">
+          <div class="modal-drag exit-drag" data-i18n-aria-label="dragPopup" aria-label="Drag">
+            <h2 id="exit-title" data-i18n="exitTitle">Leave PianoSmith?</h2>
+          </div>
+          <p id="exit-body" class="hint" data-i18n="exitBody">Do you want to close the app?</p>
+          <div class="exit-actions">
+            <button id="exit-cancel" type="button" class="ghost" data-exit="close" data-i18n="cancel">Cancel</button>
+            <button id="exit-confirm" type="button" data-exit="confirm" data-i18n="exitConfirm">Exit</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
