@@ -51,7 +51,7 @@ YouTube often blocks datacenter IPs. There is no fully automatic bypass inside t
 
    The script **filters** to YouTube hosts only and writes **`yt-cookies.b64`** (one line).
 
-   Prefer Secret Manager + a Cloud Run **volume** mount of **`YTDLP_COOKIES_B64`** (file content = one-line base64 from `yt-cookies.b64`). Set **`YTDLP_COOKIES_B64_FILE`** to the mount path (default probe: `/secrets/YTDLP_COOKIES_B64`). The app prefers the volume file when present, then falls back to env `YTDLP_COOKIES_B64` for local servers.
+   Prefer Secret Manager + a Cloud Run **volume** mount of **`YTDLP_COOKIES_B64`** (file content = one-line base64 from `yt-cookies.b64`). Default probe includes **`/volumes/YTDLP_COOKIES_B64`** (mountPath `/volumes` + secret path). Override with **`YTDLP_COOKIES_B64_FILE`** if needed. Volume wins over env when present; local servers keep using env.
 
    1. Mount the secret as a volume (`:latest`); remove the env binding on Cloud Run if both were set  
    2. Refresh with **`npm run cookies:export -- remote`** → `gcloud secrets versions add … --data-file=yt-cookies.b64` (no redeploy)  

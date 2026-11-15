@@ -17,8 +17,8 @@
  * With `remote`, runs:
  *   gcloud secrets versions add YTDLP_COOKIES_B64 --data-file=yt-cookies.b64 --project=…
  * Mount that secret as a Cloud Run **volume** (not an env var) so new versions apply
- * without redeploy. Set YTDLP_COOKIES_B64_FILE to the mount path if it is not
- * /secrets/YTDLP_COOKIES_B64.
+ * without redeploy. Default mount path: /volumes/YTDLP_COOKIES_B64
+ * (override with YTDLP_COOKIES_B64_FILE if different).
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
@@ -125,8 +125,8 @@ function uploadSecretB64(b64Path, fileEnv) {
   console.log(
     'Secret version added. With Cloud Run mounting this secret as a volume (:latest), ' +
       'no redeploy is needed — the next download re-reads the file. ' +
-      'Ensure the service mounts the secret and YTDLP_COOKIES_B64_FILE points at that path ' +
-      '(or use /secrets/YTDLP_COOKIES_B64).',
+      'Ensure the service mounts the secret at /volumes/YTDLP_COOKIES_B64 ' +
+      '(or set YTDLP_COOKIES_B64_FILE to the real path).',
   )
   const service = fileEnv.GCLOUD_RUN_SERVICE || process.env.GCLOUD_RUN_SERVICE || ''
   const region = fileEnv.GCLOUD_RUN_REGION || process.env.GCLOUD_RUN_REGION || ''
@@ -215,7 +215,7 @@ if (remote) {
 } else {
   console.log(`Recommended on Cloud Run:
   1. Mount Secret Manager secret YTDLP_COOKIES_B64 as a volume (prefer :latest)
-  2. Set YTDLP_COOKIES_B64_FILE to the mount file path (or use /secrets/YTDLP_COOKIES_B64)
+  2. Mount at /volumes/YTDLP_COOKIES_B64 (or set YTDLP_COOKIES_B64_FILE)
   3. Refresh cookies with: npm run cookies:export -- remote
      (gcloud secrets versions add … --data-file=yt-cookies.b64 — no redeploy)
   4. Check GET /api/health → cookies.ok should be true (source b64-volume)

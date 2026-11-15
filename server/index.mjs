@@ -424,6 +424,8 @@ function cookiesB64VolumeCandidates() {
   const fromEnv = (process.env.YTDLP_COOKIES_B64_FILE || process.env.YTDLP_COOKIES_B64_PATH || '').trim()
   return [
     fromEnv,
+    // Active Cloud Run revision: volume mountPath=/volumes, secret path=YTDLP_COOKIES_B64
+    '/volumes/YTDLP_COOKIES_B64',
     '/secrets/YTDLP_COOKIES_B64',
     '/var/secrets/YTDLP_COOKIES_B64',
     '/etc/secrets/YTDLP_COOKIES_B64',
