@@ -50,6 +50,10 @@ export type SyncResult = {
   pulled: number
   pushed: number
   folderName: string
+  /** Remote songs skipped because media files were missing/unreadable. */
+  skippedMedia?: number
+  /** Folders written into IndexedDB after coalesce. */
+  foldersUpserted?: number
 }
 
 /** Portable library package used by folder sync and the device bridge. */
@@ -695,10 +699,7 @@ export async function importLibraryBundle(
     preferLocal,
   )
 
-  for (const folder of coalescedFolders) {
-    const local = localFolders.find((row) => row.id === folder.id)
-    if (!local || folder.updatedAt > local.updatedAt) await upsertFolder(folder)
-  }
+  for (const folder of coalescedFolders) await upsertFolder(folder)
 
   for (const song of localSongs) {
     const next = resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap)
@@ -753,6 +754,18 @@ export async function syncLibrary(): Promise<SyncResult> {
     const prev = foldersById.get(folder.id)
     if (!prev || folder.updatedAt >= prev.updatedAt) foldersById.set(folder.id, folder)
   }
+  // Ensure every song folderId has a folder row (manifest may omit it).
+  for (const entry of remote.songs) {
+    const id = entry.folderId || ROOT_FOLDER_ID
+    if (!id || foldersById.has(id)) continue
+    foldersById.set(id, {
+      id,
+      name: id.slice(0, 8),
+      parentId: ROOT_FOLDER_ID,
+      createdAt: entry.createdAt || entry.updatedAt || Date.now(),
+      updatedAt: entry.updatedAt || Date.now(),
+    })
+  }
   const preferLocal = new Set(localFolders.map((folder) => folder.id))
   const { folders: coalescedFolders, remap: folderRemap } = coalesceFolders(
     [...foldersById.values()],
@@ -760,9 +773,15 @@ export async function syncLibrary(): Promise<SyncResult> {
   )
   const coalescedById = new Map(coalescedFolders.map((folder) => [folder.id, folder]))
 
+  // Always rewrite folder rows after coalesce so parentIds heal (e.g. Magic under the kept Queen).
+  for (const folder of coalescedFolders) await upsertFolder(folder)
+  await applyFolderRemap(folderRemap, [])
+
   let pulled = 0
+  let skippedMedia = 0
   const localByKey = new Map(localSongs.map((song) => [songKey(song), song]))
   const mergedSongs = new Map<string, LibrarySong>()
+  const retainedRemote = new Map<string, SyncSongEntry>()
 
   for (const song of localSongs) {
     const folderId = resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap)
@@ -773,15 +792,35 @@ export async function syncLibrary(): Promise<SyncResult> {
 
   for (const entry of remote.songs) {
     const key = songKey(entry)
+    const folderId = resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap)
+    const remappedEntry: SyncSongEntry = { ...entry, folderId }
     const local = localByKey.get(key)
-    if (local && local.updatedAt >= entry.updatedAt) continue
+    if (local && local.updatedAt >= entry.updatedAt) {
+      // Keep local bytes; still remember remapped folder if local missed a move.
+      const localMerged = mergedSongs.get(key)
+      if (localMerged && localMerged.folderId !== folderId && entry.updatedAt >= localMerged.updatedAt) {
+        const moved = { ...localMerged, folderId }
+        await putLibrarySong(moved)
+        mergedSongs.set(key, moved)
+      }
+      continue
+    }
     const mediaName = entry.media?.split('/').pop() || entry.media
     const notesName = entry.notes?.split('/').pop() || entry.notes
-    if (!mediaName || !notesName) continue
+    if (!mediaName || !notesName) {
+      skippedMedia += 1
+      retainedRemote.set(key, remappedEntry)
+      console.warn('[pianosmith sync] skip song (missing media names)', entry.title, entry.media, entry.notes)
+      continue
+    }
     const data = await readBinaryFile(media, mediaName)
-    if (!data) continue
+    if (!data) {
+      skippedMedia += 1
+      retainedRemote.set(key, remappedEntry)
+      console.warn('[pianosmith sync] skip song (unreadable media — is the Drive file online-only?)', entry.title, mediaName)
+      continue
+    }
     const notes = parseNotes(await readTextFile(media, notesName))
-    const folderId = resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap)
     const imported: LibrarySong = {
       id: local?.id || entry.id,
       title: entry.title,
@@ -805,23 +844,20 @@ export async function syncLibrary(): Promise<SyncResult> {
     pulled += 1
   }
 
-  for (const folder of coalescedFolders) {
-    const local = localFolders.find((row) => row.id === folder.id)
-    if (!local || folder.updatedAt > local.updatedAt) await upsertFolder(folder)
-  }
-  await applyFolderRemap(folderRemap, [])
-
   const finalSongs = [...mergedSongs.values()]
   let pushed = 0
   const remoteByKey = new Map(remote.songs.map((song) => [songKey(song), song]))
   const manifestSongs: SyncSongEntry[] = []
+  const seenKeys = new Set<string>()
 
   for (const song of finalSongs) {
+    const key = songKey(song)
+    seenKeys.add(key)
     const fileId = safeFileId(song.id)
     const ext = extensionFor(song.mime, song.kind)
     const mediaName = `${fileId}.${ext}`
     const notesName = `${fileId}.notes.json`
-    const remoteEntry = remoteByKey.get(songKey(song))
+    const remoteEntry = remoteByKey.get(key)
     const folderId = resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap)
     // Moves only change folderId/updatedAt — rewrite audio only when content identity changes.
     const needsMediaWrite =
@@ -851,6 +887,21 @@ export async function syncLibrary(): Promise<SyncResult> {
     })
   }
 
+  // Never drop remote-only songs from the shared manifest when media could not be read.
+  for (const [key, entry] of retainedRemote) {
+    if (seenKeys.has(key)) continue
+    seenKeys.add(key)
+    manifestSongs.push(entry)
+  }
+  for (const entry of remote.songs) {
+    const key = songKey(entry)
+    if (seenKeys.has(key)) continue
+    manifestSongs.push({
+      ...entry,
+      folderId: resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap),
+    })
+  }
+
   const manifest: SyncManifest = {
     version: 1,
     updatedAt: Date.now(),
@@ -863,5 +914,23 @@ export async function syncLibrary(): Promise<SyncResult> {
   localStorage.setItem(NAME_KEY, folderName)
   localStorage.setItem(LAST_KEY, String(manifest.updatedAt))
 
-  return { pulled, pushed, folderName }
+  console.info('[pianosmith sync]', {
+    remoteSongs: remote.songs.length,
+    remoteFolders: remote.folders.length,
+    localSongs: localSongs.length,
+    pulled,
+    pushed,
+    skippedMedia,
+    foldersUpserted: coalescedFolders.length,
+    folderRemap: [...folderRemap.entries()],
+    coalesced: coalescedFolders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
+  })
+
+  return {
+    pulled,
+    pushed,
+    folderName,
+    skippedMedia,
+    foldersUpserted: coalescedFolders.length,
+  }
 }

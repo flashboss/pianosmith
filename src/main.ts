@@ -879,8 +879,16 @@ async function runLibrarySync(options: { quiet?: boolean } = {}) {
     renderSyncStatus(getSyncStatus())
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
-    if (!options.quiet || result.pulled > 0 || result.pushed > 0) {
-      toast(t('syncDone', { pulled: result.pulled, pushed: result.pushed }))
+    if (!options.quiet || result.pulled > 0 || result.pushed > 0 || (result.skippedMedia ?? 0) > 0) {
+      toast(
+        (result.skippedMedia ?? 0) > 0
+          ? t('syncDoneSkipped', {
+              pulled: result.pulled,
+              pushed: result.pushed,
+              skipped: result.skippedMedia ?? 0,
+            })
+          : t('syncDone', { pulled: result.pulled, pushed: result.pushed }),
+      )
     }
   } catch (error) {
     if (!options.quiet) toast(error instanceof Error ? error.message : t('syncFail'))

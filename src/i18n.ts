@@ -128,6 +128,8 @@ const it: Dict = {
   syncNever: 'mai',
   syncBusy: 'Sincronizzo i brani salvati…',
   syncDone: 'Sync completata · {pulled} in ingresso, {pushed} in uscita',
+  syncDoneSkipped:
+    'Sync completata · {pulled} in, {pushed} out · {skipped} brani non letti (file Drive solo online?)',
   syncFail: 'Sincronizzazione non riuscita',
   syncPermissionDenied: 'Permesso negato per la cartella condivisa',
   syncBridgeTitle: 'Ponte dispositivi',
@@ -338,6 +340,8 @@ const en: Dict = {
   syncNever: 'never',
   syncBusy: 'Syncing saved songs…',
   syncDone: 'Sync done · {pulled} in, {pushed} out',
+  syncDoneSkipped:
+    'Sync done · {pulled} in, {pushed} out · {skipped} songs unread (Drive online-only files?)',
   syncFail: 'Sync failed',
   syncPermissionDenied: 'Permission denied for the shared folder',
   syncBridgeTitle: 'Device bridge',
