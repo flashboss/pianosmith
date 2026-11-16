@@ -229,20 +229,25 @@
             <h3 data-i18n="syncTitle">Shared folder</h3>
             <p id="library-sync-folder" class="hint" data-i18n="syncFolderNone">No shared folder linked.</p>
             <p id="library-sync-last" class="hint"></p>
-            <p id="library-sync-unsupported" class="hint" hidden data-i18n="syncUnsupported">
-              Shared-folder sync needs Chrome or Edge on a computer.
+            <p id="library-sync-fallback" class="hint" hidden data-i18n="syncUseZip">
+              This browser syncs via ZIP export/import (or pick a folder to import).
             </p>
             <div class="library-sync-actions library-sync-folder-actions">
               <button id="library-sync-choose" type="button" data-i18n="syncChooseFolder">Choose folder</button>
+              <button id="library-sync-import-folder" type="button" class="ghost" data-i18n="syncImportFolder">Import folder</button>
               <button id="library-sync-now" type="button" class="ghost" data-i18n="syncNow">Sync now</button>
+              <button id="library-sync-export" type="button" class="ghost" data-i18n="syncExportZip">Export ZIP</button>
+              <button id="library-sync-import" type="button" class="ghost" data-i18n="syncImportZip">Import ZIP</button>
               <button id="library-sync-disconnect" type="button" class="ghost" data-i18n="syncDisconnect">Disconnect</button>
             </div>
+            <input id="library-sync-zip-input" type="file" accept=".zip,application/zip" hidden />
+            <input id="library-sync-dir-input" type="file" webkitdirectory multiple hidden />
             <label class="library-sync-auto">
               <input id="library-sync-auto" type="checkbox" />
-              <span data-i18n="syncAuto">Sync automatically after saving a song</span>
+              <span data-i18n="syncAuto">Sync automatically after saves, moves, and folder changes</span>
             </label>
             <p class="hint" data-i18n="syncHint">
-              Pick a shared folder (Drive, Dropbox, network share…). Devices that use the same folder can exchange saved songs.
+              On Chrome/Edge you can link a shared folder for live sync. On any browser, export a ZIP into Drive/Dropbox and import it on the other device.
             </p>
 
             <h3 data-i18n="syncBridgeTitle">Device bridge</h3>

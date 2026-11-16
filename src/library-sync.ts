@@ -1,3 +1,4 @@
+import { strFromU8, unzipSync, zipSync } from 'fflate'
 import { t } from './i18n'
 import {
   getSyncDirectoryHandle,
@@ -16,6 +17,7 @@ const MEDIA_DIR = 'media'
 const AUTO_KEY = 'pianosmith.sync.auto'
 const NAME_KEY = 'pianosmith.sync.folderName'
 const LAST_KEY = 'pianosmith.sync.lastAt'
+const MODE_KEY = 'pianosmith.sync.mode'
 
 type SyncSongEntry = {
   id: string
@@ -73,15 +75,21 @@ export type LibraryBundleSongFiles = {
   notesJson: string
 }
 
+export type SyncMode = 'handle' | 'files'
+
 export type SyncStatus = {
+  /** Live folder link via File System Access (Chromium). */
+  canLinkFolder: boolean
+  /** Always true — zip / folder-file sync works in every browser. */
   supported: boolean
+  mode: SyncMode
   folderName: string
   linked: boolean
   auto: boolean
   lastAt: number | null
 }
 
-function canPickDirectory(): boolean {
+export function canPickDirectory(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
 }
 
@@ -191,10 +199,14 @@ export function getSyncStatus(): SyncStatus {
   const folderName = (localStorage.getItem(NAME_KEY) || '').trim()
   const lastRaw = localStorage.getItem(LAST_KEY)
   const lastAt = lastRaw ? Number(lastRaw) : NaN
+  const mode = localStorage.getItem(MODE_KEY) === 'handle' ? 'handle' : 'files'
+  const canLink = canPickDirectory()
   return {
-    supported: canPickDirectory(),
+    canLinkFolder: canLink,
+    supported: true,
+    mode: canLink && mode === 'handle' ? 'handle' : 'files',
     folderName,
-    linked: Boolean(folderName),
+    linked: Boolean(folderName) || mode === 'handle',
     auto: localStorage.getItem(AUTO_KEY) === '1',
     lastAt: Number.isFinite(lastAt) ? lastAt : null,
   }
@@ -216,10 +228,11 @@ async function linkedDirectory(mode: 'read' | 'readwrite'): Promise<FileSystemDi
 }
 
 export async function chooseSyncFolder(): Promise<SyncStatus> {
-  if (!canPickDirectory()) throw new Error(t('syncUnsupported'))
+  if (!canPickDirectory()) throw new Error(t('syncUseZip'))
   const handle = await window.showDirectoryPicker!({ id: 'pianosmith-library', mode: 'readwrite' })
   await ensurePermission(handle, 'readwrite')
   await setSyncDirectoryHandle(handle)
+  localStorage.setItem(MODE_KEY, 'handle')
   localStorage.setItem(NAME_KEY, handle.name || t('syncFolder'))
   return getSyncStatus()
 }
@@ -228,23 +241,154 @@ export async function disconnectSyncFolder(): Promise<SyncStatus> {
   await setSyncDirectoryHandle(null)
   localStorage.removeItem(NAME_KEY)
   localStorage.removeItem(LAST_KEY)
+  localStorage.setItem(MODE_KEY, 'files')
   return getSyncStatus()
 }
 
 export async function restoreSyncLink(): Promise<SyncStatus> {
   const status = getSyncStatus()
-  if (!status.supported) return status
+  if (!status.canLinkFolder || status.mode !== 'handle') return status
   try {
     const handle = await getSyncDirectoryHandle()
     if (!handle) {
+      localStorage.setItem(MODE_KEY, 'files')
       if (status.folderName) localStorage.removeItem(NAME_KEY)
       return getSyncStatus()
     }
+    localStorage.setItem(MODE_KEY, 'handle')
     localStorage.setItem(NAME_KEY, handle.name || status.folderName || t('syncFolder'))
   } catch {
     // Keep cached name; permission is requested on sync.
   }
   return getSyncStatus()
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
+function toUint8(data: ArrayBuffer | string): Uint8Array {
+  if (typeof data === 'string') return new TextEncoder().encode(data)
+  return new Uint8Array(data)
+}
+
+export async function exportLibraryZip(): Promise<SyncResult> {
+  const { manifest, files } = await buildLibraryBundle()
+  const entries: Record<string, Uint8Array> = {
+    [MANIFEST_NAME]: toUint8(JSON.stringify(manifest, null, 2)),
+  }
+  for (const file of files) {
+    entries[`${MEDIA_DIR}/${file.mediaName}`] = toUint8(file.data)
+    entries[`${MEDIA_DIR}/${file.notesName}`] = toUint8(file.notesJson)
+  }
+  const zipped = zipSync(entries, { level: 6 })
+  downloadBlob(new Blob([new Uint8Array(zipped)], { type: 'application/zip' }), 'pianosmith-library.zip')
+  const folderName = t('syncZipPackage')
+  localStorage.setItem(MODE_KEY, 'files')
+  localStorage.setItem(NAME_KEY, folderName)
+  localStorage.setItem(LAST_KEY, String(manifest.updatedAt))
+  return { pulled: 0, pushed: manifest.songs.length, folderName }
+}
+
+function normalizeArchivePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\.\//, '')
+}
+
+function basename(path: string): string {
+  const parts = normalizeArchivePath(path).split('/')
+  return parts[parts.length - 1] || path
+}
+
+async function importFromFileMap(files: Map<string, Uint8Array | ArrayBuffer | string>): Promise<SyncResult> {
+  const byBase = new Map<string, Uint8Array | ArrayBuffer | string>()
+  let manifestRaw: string | null = null
+  for (const [path, data] of files) {
+    const norm = normalizeArchivePath(path)
+    byBase.set(basename(norm), data)
+    if (basename(norm) === MANIFEST_NAME || norm.endsWith(`/${MANIFEST_NAME}`)) {
+      manifestRaw = typeof data === 'string' ? data : strFromU8(data instanceof Uint8Array ? data : new Uint8Array(data))
+    }
+  }
+  const manifest = parseManifest(manifestRaw) as LibraryBundle
+  if (!manifest.songs.length && !manifest.folders.length && !manifestRaw) {
+    throw new Error(t('syncZipInvalid'))
+  }
+  const asBytes = (name: string): Promise<ArrayBuffer | null> => {
+    const hit = byBase.get(name)
+    if (!hit) return Promise.resolve(null)
+    if (typeof hit === 'string') return Promise.resolve(toUint8(hit).buffer as ArrayBuffer)
+    if (hit instanceof Uint8Array) {
+      return Promise.resolve(hit.buffer.slice(hit.byteOffset, hit.byteOffset + hit.byteLength) as ArrayBuffer)
+    }
+    return Promise.resolve(hit)
+  }
+  const asText = async (name: string): Promise<string | null> => {
+    const hit = byBase.get(name)
+    if (!hit) return null
+    if (typeof hit === 'string') return hit
+    return strFromU8(hit instanceof Uint8Array ? hit : new Uint8Array(hit))
+  }
+  const result = await importLibraryBundle(manifest, asBytes, asText)
+  const folderName = t('syncZipPackage')
+  localStorage.setItem(MODE_KEY, 'files')
+  localStorage.setItem(NAME_KEY, folderName)
+  localStorage.setItem(LAST_KEY, String(Date.now()))
+  return { pulled: result.pulled, pushed: 0, folderName }
+}
+
+export async function importLibraryZip(file: File): Promise<SyncResult> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let unzipped: Record<string, Uint8Array>
+  try {
+    unzipped = unzipSync(bytes)
+  } catch {
+    throw new Error(t('syncZipInvalid'))
+  }
+  const files = new Map<string, Uint8Array>()
+  for (const [path, data] of Object.entries(unzipped)) files.set(path, data)
+  return importFromFileMap(files)
+}
+
+/** Import from &lt;input webkitdirectory&gt; or a flat file list that includes the manifest. */
+export async function importLibraryFiles(fileList: Iterable<File>): Promise<SyncResult> {
+  const files = new Map<string, ArrayBuffer | string>()
+  let seenManifest = false
+  for (const file of fileList) {
+    const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+    const name = basename(relative)
+    if (name === MANIFEST_NAME) {
+      seenManifest = true
+      files.set(relative, await file.text())
+    } else {
+      files.set(relative, await file.arrayBuffer())
+    }
+  }
+  if (!seenManifest) throw new Error(t('syncZipInvalid'))
+  const folderHint = [...fileList][0] as File & { webkitRelativePath?: string } | undefined
+  const top = folderHint?.webkitRelativePath?.split(/[/\\]/)[0]
+  const result = await importFromFileMap(files)
+  if (top) {
+    localStorage.setItem(NAME_KEY, top)
+    result.folderName = top
+  }
+  return result
+}
+
+export async function syncLibraryOrExport(): Promise<SyncResult> {
+  const status = getSyncStatus()
+  if (status.canLinkFolder && status.mode === 'handle') {
+    try {
+      return await syncLibrary()
+    } catch {
+      // Fall through to zip if the live folder handle is unavailable.
+    }
+  }
+  return exportLibraryZip()
 }
 
 export async function buildLibraryBundle(): Promise<{

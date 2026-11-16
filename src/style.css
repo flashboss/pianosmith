@@ -684,6 +684,11 @@ h1 {
   grid-column: 1 / -1;
 }
 
+.library-sync-folder-actions #library-sync-export,
+.library-sync-folder-actions #library-sync-import {
+  grid-column: auto;
+}
+
 .library-sync-bridge-join {
   display: grid;
   gap: 6px;

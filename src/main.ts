@@ -34,11 +34,14 @@ import { LibraryBridge } from './library-bridge'
 import {
   chooseSyncFolder,
   disconnectSyncFolder,
+  exportLibraryZip,
   getSyncStatus,
+  importLibraryFiles,
+  importLibraryZip,
   isSyncAutoEnabled,
   restoreSyncLink,
   setSyncAuto,
-  syncLibrary,
+  syncLibraryOrExport,
   type SyncStatus,
 } from './library-sync'
 import { isMidiFile, notesFromMidi, songToMidiBlob } from './midi'
@@ -134,10 +137,15 @@ const librarySyncOpenBtn = el<HTMLButtonElement>('library-sync-open')
 const librarySyncPanel = el<HTMLDivElement>('library-sync-panel')
 const librarySyncFolder = el<HTMLParagraphElement>('library-sync-folder')
 const librarySyncLast = el<HTMLParagraphElement>('library-sync-last')
-const librarySyncUnsupported = el<HTMLParagraphElement>('library-sync-unsupported')
+const librarySyncFallback = el<HTMLParagraphElement>('library-sync-fallback')
 const librarySyncChooseBtn = el<HTMLButtonElement>('library-sync-choose')
+const librarySyncImportFolderBtn = el<HTMLButtonElement>('library-sync-import-folder')
 const librarySyncNowBtn = el<HTMLButtonElement>('library-sync-now')
+const librarySyncExportBtn = el<HTMLButtonElement>('library-sync-export')
+const librarySyncImportBtn = el<HTMLButtonElement>('library-sync-import')
 const librarySyncDisconnectBtn = el<HTMLButtonElement>('library-sync-disconnect')
+const librarySyncZipInput = el<HTMLInputElement>('library-sync-zip-input')
+const librarySyncDirInput = el<HTMLInputElement>('library-sync-dir-input')
 const librarySyncAuto = el<HTMLInputElement>('library-sync-auto')
 const librarySyncBridgeStatus = el<HTMLParagraphElement>('library-sync-bridge-status')
 const librarySyncBridgeHostBtn = el<HTMLButtonElement>('library-sync-bridge-host')
@@ -765,22 +773,29 @@ function renderSyncBridgeStatus(kind: string = libraryBridge.listening ? 'listen
 }
 
 function renderSyncStatus(status: SyncStatus = getSyncStatus()) {
-  librarySyncUnsupported.hidden = status.supported
-  librarySyncChooseBtn.disabled = !status.supported || librarySyncBusy
-  librarySyncNowBtn.disabled = !status.linked || !status.supported || librarySyncBusy
+  const live = status.canLinkFolder && status.mode === 'handle'
+  librarySyncFallback.hidden = status.canLinkFolder
+  librarySyncChooseBtn.hidden = !status.canLinkFolder
+  librarySyncChooseBtn.disabled = librarySyncBusy
+  librarySyncImportFolderBtn.disabled = librarySyncBusy
+  librarySyncExportBtn.disabled = librarySyncBusy
+  librarySyncImportBtn.disabled = librarySyncBusy
+  librarySyncNowBtn.disabled = librarySyncBusy || (live ? !status.linked : false)
+  librarySyncNowBtn.textContent = live ? t('syncNow') : t('syncExportZip')
   librarySyncDisconnectBtn.disabled = !status.linked || librarySyncBusy
+  librarySyncDisconnectBtn.hidden = !live && !status.folderName
   librarySyncAuto.checked = status.auto
-  librarySyncAuto.disabled = !status.supported
+  librarySyncAuto.disabled = !live || librarySyncBusy
   librarySyncBridgeHostBtn.disabled = librarySyncBusy || libraryBridgePulling
   librarySyncBridgeSendBtn.disabled = librarySyncBusy || libraryBridgePulling
   librarySyncBridgeStopBtn.disabled = !libraryBridge.listening && !libraryBridge.code
-  librarySyncFolder.textContent = status.linked
+  librarySyncFolder.textContent = status.folderName
     ? t('syncFolderLinked', { name: status.folderName || t('syncFolder') })
     : t('syncFolderNone')
-  librarySyncLast.textContent = status.linked
+  librarySyncLast.textContent = status.lastAt
     ? t('syncLast', { when: formatSyncWhen(status.lastAt) })
     : ''
-  librarySyncLast.hidden = !status.linked
+  librarySyncLast.hidden = !status.lastAt
   if (libraryBridge.listening) renderSyncBridgeStatus('listen')
 }
 
@@ -832,17 +847,22 @@ function toggleSyncPanel() {
 
 async function runLibrarySync(options: { quiet?: boolean } = {}) {
   if (librarySyncBusy) return
-  if (options.quiet && !getSyncStatus().linked) return
+  const status = getSyncStatus()
+  if (options.quiet && !(status.canLinkFolder && status.mode === 'handle' && status.linked)) return
   librarySyncBusy = true
   renderSyncStatus()
   try {
     if (!options.quiet) toast(t('syncBusy'))
-    const result = await syncLibrary()
+    const result = await syncLibraryOrExport()
     renderSyncStatus(getSyncStatus())
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
     if (!options.quiet || result.pulled > 0 || result.pushed > 0) {
-      toast(t('syncDone', { pulled: result.pulled, pushed: result.pushed }))
+      toast(
+        result.pulled === 0 && result.pushed > 0 && status.mode !== 'handle'
+          ? t('syncZipExported', { n: result.pushed })
+          : t('syncDone', { pulled: result.pulled, pushed: result.pushed }),
+      )
     }
   } catch (error) {
     if (!options.quiet) toast(error instanceof Error ? error.message : t('syncFail'))
@@ -856,7 +876,31 @@ async function runLibrarySync(options: { quiet?: boolean } = {}) {
 
 function maybeAutoSyncLibrary() {
   if (!isSyncAutoEnabled()) return
+  const status = getSyncStatus()
+  if (!(status.canLinkFolder && status.mode === 'handle' && status.linked)) return
   void runLibrarySync({ quiet: true })
+}
+
+async function runLibraryImport(
+  importer: () => Promise<{ pulled: number; pushed: number; folderName: string }>,
+) {
+  if (librarySyncBusy) return
+  librarySyncBusy = true
+  renderSyncStatus()
+  try {
+    toast(t('syncBusy'))
+    const result = await importer()
+    renderSyncStatus(getSyncStatus())
+    await refreshLibraryButton()
+    if (!libraryModal.hidden) await renderLibraryBrowser()
+    toast(t('syncDone', { pulled: result.pulled, pushed: result.pushed }))
+  } catch (error) {
+    toast(error instanceof Error ? error.message : t('syncFail'))
+    renderSyncStatus()
+  } finally {
+    librarySyncBusy = false
+    renderSyncStatus()
+  }
 }
 
 function renderLibraryPath(path: Array<{ id: string; name: string }>) {
@@ -1379,6 +1423,27 @@ librarySyncChooseBtn.addEventListener('click', () => {
       toast(error instanceof Error ? error.message : t('syncFail'))
       renderSyncStatus()
     })
+})
+librarySyncImportFolderBtn.addEventListener('click', () => {
+  librarySyncDirInput.value = ''
+  librarySyncDirInput.click()
+})
+librarySyncExportBtn.addEventListener('click', () => {
+  void runLibraryImport(() => exportLibraryZip())
+})
+librarySyncImportBtn.addEventListener('click', () => {
+  librarySyncZipInput.value = ''
+  librarySyncZipInput.click()
+})
+librarySyncZipInput.addEventListener('change', () => {
+  const file = librarySyncZipInput.files?.[0]
+  if (!file) return
+  void runLibraryImport(() => importLibraryZip(file))
+})
+librarySyncDirInput.addEventListener('change', () => {
+  const files = librarySyncDirInput.files
+  if (!files?.length) return
+  void runLibraryImport(() => importLibraryFiles(files))
 })
 librarySyncNowBtn.addEventListener('click', () => {
   void runLibrarySync()

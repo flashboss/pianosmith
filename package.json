@@ -19,6 +19,7 @@
     "@spotify/basic-pitch": "1.0.1",
     "@tensorflow/tfjs": "3.21.0",
     "@tonejs/midi": "^2.0.28",
+    "fflate": "^0.8.3",
     "jspdf": "^4.2.1",
     "vexflow": "^5.0.0"
   },
