@@ -7,6 +7,7 @@ import {
   listAllFolders,
   listAllLibrarySongs,
   putLibrarySong,
+  removeLibrarySong,
   setSyncDirectoryHandle,
   upsertFolder,
   type LibraryFolder,
@@ -239,7 +240,12 @@ function parseNotes(raw: string | null): RawNote[] {
 }
 
 function songKey(song: { source: string; id: string }): string {
-  return song.source || `id:${song.id}`
+  const source = (song.source || '').trim()
+  const youtube = source.match(/(?:youtube\.com\/watch\?(?:[^#]*&)?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i)
+  if (youtube) return `yt:${youtube[1]}`
+  const spotify = source.match(/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(?:track|episode)\/([a-zA-Z0-9]+)/i)
+  if (spotify) return `spotify:${spotify[1]}`
+  return source || `id:${song.id}`
 }
 
 function folderGroupKey(parentId: string, name: string): string {
@@ -337,11 +343,17 @@ async function applyFolderRemap(
 }
 
 /**
- * Merge local same-named sibling folders and remap songs.
- * Needed on TV: bridge coalesce only runs on the receiver, so a TV that *sends*
- * keeps duplicate Queens until this heal runs.
+ * Merge local same-named sibling folders, remap songs, repair orphans, drop
+ * duplicate source keys. Needed on TV (bridge coalesce only runs on the receiver)
+ * and on PC when folder merges leave a song pointing at a deleted folder id —
+ * that song still counts in "Brani salvati · N" but is invisible in the browser.
  */
-export async function healLibraryFolders(): Promise<{ merged: number; folders: number }> {
+export async function healLibraryFolders(): Promise<{
+  merged: number
+  folders: number
+  orphans: number
+  duplicates: number
+}> {
   const localFolders = await listAllFolders()
   const localSongs = await listAllLibrarySongs()
   const prefer = new Set(localFolders.map((folder) => folder.id))
@@ -354,14 +366,47 @@ export async function healLibraryFolders(): Promise<{ merged: number; folders: n
     }
   }
   await applyFolderRemap(remap, [])
-  if (remap.size) {
-    console.info('[pianosmith heal folders]', {
+
+  const folderIds = new Set(coalesced.map((folder) => folder.id))
+  folderIds.add(ROOT_FOLDER_ID)
+  let orphans = 0
+  const afterRemap = await listAllLibrarySongs()
+  for (const song of afterRemap) {
+    const folderId = song.folderId || ROOT_FOLDER_ID
+    if (folderId && !folderIds.has(folderId)) {
+      // Folder was removed in a prior merge — surface the song at root so it is reachable.
+      await putLibrarySong({ ...song, folderId: ROOT_FOLDER_ID })
+      orphans += 1
+    }
+  }
+
+  let duplicates = 0
+  const byKey = new Map<string, LibrarySong[]>()
+  for (const song of await listAllLibrarySongs()) {
+    const key = songKey(song)
+    const list = byKey.get(key) || []
+    list.push(song)
+    byKey.set(key, list)
+  }
+  for (const group of byKey.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+    for (let i = 1; i < group.length; i += 1) {
+      await removeLibrarySong(group[i].id)
+      duplicates += 1
+    }
+  }
+
+  if (remap.size || orphans || duplicates) {
+    console.info('[pianosmith heal library]', {
       merged: remap.size,
+      orphans,
+      duplicates,
       remap: [...remap.entries()],
       folders: coalesced.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
     })
   }
-  return { merged: remap.size, folders: coalesced.length }
+  return { merged: remap.size, folders: coalesced.length, orphans, duplicates }
 }
 
 export function getSyncStatus(): SyncStatus {
