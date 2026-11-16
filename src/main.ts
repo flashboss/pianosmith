@@ -147,6 +147,7 @@ const librarySyncDisconnectBtn = el<HTMLButtonElement>('library-sync-disconnect'
 const librarySyncZipInput = el<HTMLInputElement>('library-sync-zip-input')
 const librarySyncDirInput = el<HTMLInputElement>('library-sync-dir-input')
 const librarySyncAuto = el<HTMLInputElement>('library-sync-auto')
+const librarySyncAutoLabel = librarySyncAuto.closest('label') as HTMLLabelElement | null
 const librarySyncBridgeStatus = el<HTMLParagraphElement>('library-sync-bridge-status')
 const librarySyncBridgeHostBtn = el<HTMLButtonElement>('library-sync-bridge-host')
 const librarySyncBridgeStopBtn = el<HTMLButtonElement>('library-sync-bridge-stop')
@@ -786,6 +787,8 @@ function renderSyncStatus(status: SyncStatus = getSyncStatus()) {
   librarySyncNowBtn.textContent = t('syncNow')
   librarySyncDisconnectBtn.disabled = !status.linked || librarySyncBusy
   librarySyncDisconnectBtn.hidden = !live && !status.folderName
+  // Auto-sync only applies to a live linked folder (Chromium directory handle).
+  if (librarySyncAutoLabel) librarySyncAutoLabel.hidden = !status.canLinkFolder
   librarySyncAuto.checked = status.auto
   librarySyncAuto.disabled = !live || librarySyncBusy
   librarySyncBridgeHostBtn.disabled = librarySyncBusy || libraryBridgePulling
