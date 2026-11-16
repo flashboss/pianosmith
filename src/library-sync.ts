@@ -93,7 +93,11 @@ export type SyncStatus = {
 }
 
 export function canPickDirectory(): boolean {
-  return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
+  if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') return false
+  // Android Chrome advertises showDirectoryPicker, but OPEN_DOCUMENT_TREE often ends in
+  // AbortError or a handle that cannot be persisted — use ZIP / Import folder there.
+  if (/Android/i.test(navigator.userAgent || '')) return false
+  return true
 }
 
 function extensionFor(mime: string, kind: 'audio' | 'midi'): string {

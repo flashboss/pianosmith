@@ -1421,7 +1421,10 @@ librarySyncChooseBtn.addEventListener('click', () => {
       toast(t('syncFolderLinked', { name: status.folderName || t('syncFolder') }))
     })
     .catch((error: unknown) => {
-      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        toast(t('syncFolderAborted'))
+        return
+      }
       toast(error instanceof Error ? error.message : t('syncFail'))
       renderSyncStatus()
     })

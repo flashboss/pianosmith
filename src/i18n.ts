@@ -116,7 +116,8 @@ const it: Dict = {
   syncHint:
     'Su Chrome/Edge puoi collegare una cartella condivisa. Su qualsiasi browser: esporta uno ZIP su Drive/Dropbox e importalo sull’altro dispositivo.',
   syncUnsupported: 'La sync su cartella richiede Chrome o Edge su computer.',
-  syncUseZip: 'Questo browser sincronizza con export/import ZIP (oppure importa una cartella).',
+  syncUseZip: 'Su questo dispositivo usa Esporta/Importa ZIP oppure Importa cartella.',
+  syncFolderAborted: 'Selezione cartella annullata o non riuscita',
   syncZipPackage: 'Pacchetto ZIP',
   syncZipExported: 'ZIP esportato · {n} brani',
   syncZipInvalid: 'ZIP o cartella non validi (manca pianosmith-library.json)',
@@ -322,7 +323,8 @@ const en: Dict = {
   syncHint:
     'On Chrome/Edge you can link a shared folder for live sync. On any browser, export a ZIP into Drive/Dropbox and import it on the other device.',
   syncUnsupported: 'Shared-folder sync needs Chrome or Edge on a computer.',
-  syncUseZip: 'This browser syncs via ZIP export/import (or pick a folder to import).',
+  syncUseZip: 'On this device use Export/Import ZIP or Import folder.',
+  syncFolderAborted: 'Folder selection cancelled or failed',
   syncZipPackage: 'ZIP package',
   syncZipExported: 'ZIP exported · {n} songs',
   syncZipInvalid: 'Invalid ZIP or folder (missing pianosmith-library.json)',
