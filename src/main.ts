@@ -780,8 +780,10 @@ function renderSyncStatus(status: SyncStatus = getSyncStatus()) {
   librarySyncImportFolderBtn.disabled = librarySyncBusy
   librarySyncExportBtn.disabled = librarySyncBusy
   librarySyncImportBtn.disabled = librarySyncBusy
-  librarySyncNowBtn.disabled = librarySyncBusy || (live ? !status.linked : false)
-  librarySyncNowBtn.textContent = live ? t('syncNow') : t('syncExportZip')
+  // Live folder sync only; ZIP uses the dedicated Export/Import buttons.
+  librarySyncNowBtn.hidden = !live
+  librarySyncNowBtn.disabled = librarySyncBusy || !status.linked
+  librarySyncNowBtn.textContent = t('syncNow')
   librarySyncDisconnectBtn.disabled = !status.linked || librarySyncBusy
   librarySyncDisconnectBtn.hidden = !live && !status.folderName
   librarySyncAuto.checked = status.auto
