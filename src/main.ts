@@ -40,6 +40,8 @@ import {
   importLibraryFiles,
   importLibraryZip,
   isSyncAutoEnabled,
+  clearDeletedSong,
+  rememberDeletedSong,
   restoreSyncLink,
   setSyncAuto,
   syncLibraryOrExport,
@@ -702,6 +704,7 @@ async function rememberSong(input: {
 }) {
   try {
     await saveLibrarySong(input)
+    clearDeletedSong({ source: input.source, id: '' })
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
     maybeAutoSyncLibrary()
@@ -1126,9 +1129,12 @@ async function loadSaved(id: string) {
 
 async function removeSaved(id: string) {
   try {
+    const existing = await getLibrarySong(id)
+    if (existing) rememberDeletedSong(existing)
     await removeLibrarySong(id)
     await refreshLibraryButton()
     await renderLibraryBrowser()
+    // Push the deletion to the shared folder (tombstone prevents resurrection on pull).
     maybeAutoSyncLibrary()
   } catch (error) {
     toast(error instanceof Error ? error.message : t('removeSongFail'))

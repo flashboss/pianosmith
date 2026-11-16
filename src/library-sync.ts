@@ -21,6 +21,7 @@ const AUTO_KEY = 'pianosmith.sync.auto'
 const NAME_KEY = 'pianosmith.sync.folderName'
 const LAST_KEY = 'pianosmith.sync.lastAt'
 const MODE_KEY = 'pianosmith.sync.mode'
+const TOMBSTONE_KEY = 'pianosmith.sync.tombstones'
 
 /** Session cache — IndexedDB handle persistence is unreliable on some Android Chrome builds. */
 let memoryDirectoryHandle: FileSystemDirectoryHandle | null = null
@@ -246,6 +247,55 @@ function songKey(song: { source: string; id: string }): string {
   const spotify = source.match(/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(?:track|episode)\/([a-zA-Z0-9]+)/i)
   if (spotify) return `spotify:${spotify[1]}`
   return source || `id:${song.id}`
+}
+
+function readTombstones(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(TOMBSTONE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, number>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeTombstones(map: Record<string, number>): void {
+  localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(map))
+}
+
+/** Remember a local delete so sync does not resurrect the song from the shared folder. */
+export function rememberDeletedSong(song: { source: string; id: string }): void {
+  const key = songKey(song)
+  if (!key) return
+  const map = readTombstones()
+  map[key] = Date.now()
+  writeTombstones(map)
+}
+
+/** Clear tombstone when the user saves/imports the same song again. */
+export function clearDeletedSong(song: { source: string; id: string }): void {
+  const key = songKey(song)
+  if (!key) return
+  const map = readTombstones()
+  if (!(key in map)) return
+  delete map[key]
+  writeTombstones(map)
+}
+
+function isTombstoned(key: string, remoteUpdatedAt = 0): boolean {
+  const at = readTombstones()[key]
+  if (!at) return false
+  // A newer remote copy (re-added elsewhere) can revive the song.
+  return at >= remoteUpdatedAt
+}
+
+async function removeFileIfExists(dir: FileSystemDirectoryHandle, name: string): Promise<void> {
+  try {
+    await dir.removeEntry(name)
+  } catch {
+    /* missing is fine */
+  }
 }
 
 function folderGroupKey(parentId: string, name: string): string {
@@ -789,6 +839,7 @@ export async function importLibraryBundle(
   const localByKey = new Map(localSongs.map((song) => [songKey(song), song]))
   for (const entry of manifest.songs || []) {
     const key = songKey(entry)
+    if (isTombstoned(key, entry.updatedAt || 0)) continue
     const local = localByKey.get(key)
     if (local && local.updatedAt >= entry.updatedAt) continue
     const mediaName = entry.media?.split('/').pop() || entry.media
@@ -812,6 +863,7 @@ export async function importLibraryBundle(
       notes,
     }
     await putLibrarySong(imported)
+    clearDeletedSong(imported)
     pulled += 1
   }
   return { pulled }
@@ -869,6 +921,14 @@ export async function syncLibrary(): Promise<SyncResult> {
     const key = songKey(entry)
     const folderId = resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap)
     const remappedEntry: SyncSongEntry = { ...entry, folderId }
+    if (isTombstoned(key, entry.updatedAt || 0)) {
+      // Local delete wins: drop remote media and keep it out of the rewritten manifest.
+      const mediaName = entry.media?.split('/').pop() || entry.media
+      const notesName = entry.notes?.split('/').pop() || entry.notes
+      if (mediaName) await removeFileIfExists(media, mediaName)
+      if (notesName) await removeFileIfExists(media, notesName)
+      continue
+    }
     const local = localByKey.get(key)
     if (local && local.updatedAt >= entry.updatedAt) {
       // Keep local bytes; still remember remapped folder if local missed a move.
@@ -911,6 +971,7 @@ export async function syncLibrary(): Promise<SyncResult> {
       notes,
     }
     await putLibrarySong(imported)
+    clearDeletedSong(imported)
     if (imported.folderId) {
       const folder = coalescedById.get(imported.folderId)
       if (folder) await upsertFolder(folder)
@@ -962,19 +1023,12 @@ export async function syncLibrary(): Promise<SyncResult> {
     })
   }
 
-  // Never drop remote-only songs from the shared manifest when media could not be read.
+  // Keep remote-only songs whose media was temporarily unreadable — but never
+  // resurrect locally deleted (tombstoned) tracks.
   for (const [key, entry] of retainedRemote) {
-    if (seenKeys.has(key)) continue
+    if (seenKeys.has(key) || isTombstoned(key, entry.updatedAt || 0)) continue
     seenKeys.add(key)
     manifestSongs.push(entry)
-  }
-  for (const entry of remote.songs) {
-    const key = songKey(entry)
-    if (seenKeys.has(key)) continue
-    manifestSongs.push({
-      ...entry,
-      folderId: resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap),
-    })
   }
 
   const manifest: SyncManifest = {
