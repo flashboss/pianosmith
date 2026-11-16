@@ -109,7 +109,7 @@ const it: Dict = {
   syncChooseFolder: 'Scegli cartella',
   syncNow: 'Sincronizza ora',
   syncDisconnect: 'Scollega',
-  syncAuto: 'Sincronizza automaticamente dopo ogni salvataggio',
+  syncAuto: 'Sincronizza automaticamente dopo salvataggi, spostamenti e cartelle',
   syncHint:
     'Scegli una cartella condivisa (Drive, Dropbox, rete…). I dispositivi che usano la stessa cartella possono scambiarsi i brani salvati.',
   syncUnsupported: 'La sync su cartella richiede Chrome o Edge su computer.',
@@ -308,7 +308,7 @@ const en: Dict = {
   syncChooseFolder: 'Choose folder',
   syncNow: 'Sync now',
   syncDisconnect: 'Disconnect',
-  syncAuto: 'Sync automatically after saving a song',
+  syncAuto: 'Sync automatically after saves, moves, and folder changes',
   syncHint:
     'Pick a shared folder (Drive, Dropbox, network share…). Devices that use the same folder can exchange saved songs.',
   syncUnsupported: 'Shared-folder sync needs Chrome or Edge on a computer.',
@@ -481,7 +481,7 @@ const fr: Dict = {
   syncChooseFolder: 'Choisir un dossier',
   syncNow: 'Synchroniser',
   syncDisconnect: 'Dissocier',
-  syncAuto: 'Synchroniser automatiquement après chaque enregistrement',
+  syncAuto: 'Synchroniser automatiquement après enregistrements, déplacements et dossiers',
   syncHint:
     'Choisissez un dossier partagé (Drive, Dropbox, réseau…). Les appareils qui utilisent le même dossier peuvent échanger les morceaux enregistrés.',
   syncUnsupported: 'La sync de dossier nécessite Chrome ou Edge sur ordinateur.',

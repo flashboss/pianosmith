@@ -412,12 +412,19 @@ export async function syncLibrary(): Promise<SyncResult> {
     const mediaName = `${fileId}.${ext}`
     const notesName = `${fileId}.notes.json`
     const remoteEntry = remoteByKey.get(songKey(song))
-    const needsWrite = !remoteEntry || song.updatedAt > remoteEntry.updatedAt || remoteEntry.media !== mediaName
-    if (needsWrite) {
-      await writeFile(media, mediaName, song.data)
-      await writeFile(media, notesName, JSON.stringify(song.notes))
-      pushed += 1
-    }
+    const folderId = song.folderId || ''
+    // Moves only change folderId/updatedAt — rewrite audio only when content identity changes.
+    const needsMediaWrite =
+      !remoteEntry || remoteEntry.media !== `${MEDIA_DIR}/${mediaName}` || remoteEntry.bytes !== song.bytes || remoteEntry.mime !== song.mime
+    const needsNotesWrite = !remoteEntry || song.updatedAt > remoteEntry.updatedAt || needsMediaWrite
+    const needsMetaWrite =
+      !remoteEntry ||
+      (remoteEntry.folderId || '') !== folderId ||
+      remoteEntry.title !== song.title ||
+      remoteEntry.updatedAt !== song.updatedAt
+    if (needsMediaWrite) await writeFile(media, mediaName, song.data)
+    if (needsNotesWrite) await writeFile(media, notesName, JSON.stringify(song.notes))
+    if (needsMediaWrite || needsNotesWrite || needsMetaWrite) pushed += 1
     manifestSongs.push({
       id: song.id,
       title: song.title,
@@ -426,7 +433,7 @@ export async function syncLibrary(): Promise<SyncResult> {
       mime: song.mime,
       bytes: song.bytes,
       duration: song.duration,
-      folderId: song.folderId || '',
+      folderId,
       createdAt: song.createdAt,
       updatedAt: song.updatedAt,
       media: `${MEDIA_DIR}/${mediaName}`,

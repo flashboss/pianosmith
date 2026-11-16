@@ -693,9 +693,7 @@ async function rememberSong(input: {
     await saveLibrarySong(input)
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
-    if (isSyncAutoEnabled()) {
-      void runLibrarySync({ quiet: true })
-    }
+    maybeAutoSyncLibrary()
   } catch (error) {
     console.error(error)
   }
@@ -834,6 +832,7 @@ function toggleSyncPanel() {
 
 async function runLibrarySync(options: { quiet?: boolean } = {}) {
   if (librarySyncBusy) return
+  if (options.quiet && !getSyncStatus().linked) return
   librarySyncBusy = true
   renderSyncStatus()
   try {
@@ -853,6 +852,11 @@ async function runLibrarySync(options: { quiet?: boolean } = {}) {
     librarySyncBusy = false
     renderSyncStatus()
   }
+}
+
+function maybeAutoSyncLibrary() {
+  if (!isSyncAutoEnabled()) return
+  void runLibrarySync({ quiet: true })
 }
 
 function renderLibraryPath(path: Array<{ id: string; name: string }>) {
@@ -1041,6 +1045,7 @@ async function removeSaved(id: string) {
     await removeLibrarySong(id)
     await refreshLibraryButton()
     await renderLibraryBrowser()
+    maybeAutoSyncLibrary()
   } catch (error) {
     toast(error instanceof Error ? error.message : t('removeSongFail'))
   }
@@ -1336,6 +1341,7 @@ libraryModal.addEventListener('click', (event) => {
         if (currentLibraryFolder === id) currentLibraryFolder = ROOT_FOLDER_ID
         await refreshLibraryButton()
         await renderLibraryBrowser()
+        maybeAutoSyncLibrary()
       })
       .catch((error: unknown) => {
         toast(error instanceof Error ? error.message : t('deleteFolderFail'))
@@ -1349,7 +1355,10 @@ libraryBrowser.addEventListener('change', (event) => {
   const songId = select.dataset.id
   const folderId = select.value
   void moveLibrarySong(songId, folderId)
-    .then(renderLibraryBrowser)
+    .then(async () => {
+      await renderLibraryBrowser()
+      maybeAutoSyncLibrary()
+    })
     .catch((error: unknown) => {
       toast(error instanceof Error ? error.message : t('moveSongFail'))
       void renderLibraryBrowser()
@@ -1443,7 +1452,7 @@ libraryFolderForm.addEventListener('submit', (event) => {
     .then(async () => {
       hideFolderForm()
       await renderLibraryBrowser()
-      if (isSyncAutoEnabled()) void runLibrarySync({ quiet: true })
+      maybeAutoSyncLibrary()
     })
     .catch((error: unknown) => {
       toast(error instanceof Error ? error.message : t('createFolderFail'))
