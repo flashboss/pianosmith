@@ -823,6 +823,21 @@ h1 {
   gap: 8px;
   max-height: min(420px, 48vh);
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-bottom: 4px;
+}
+
+/* Phone: nested list max-height + modal scroll fights touch — last rows stay unreachable.
+   Scroll the card only so the full song list (and sync panel) can reach the bottom. */
+.is-phone #library-modal .modal-card {
+  max-height: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.is-phone #library-modal .library-browser {
+  max-height: none;
+  overflow: visible;
 }
 
 .library-item {
