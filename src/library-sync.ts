@@ -16,6 +16,7 @@ import {
 import type { RawNote } from './types'
 
 const MANIFEST_NAME = 'pianosmith-library.json'
+const DELETED_NAME = 'pianosmith-deleted.json'
 const MEDIA_DIR = 'media'
 const AUTO_KEY = 'pianosmith.sync.auto'
 const NAME_KEY = 'pianosmith.sync.folderName'
@@ -46,6 +47,8 @@ type SyncManifest = {
   updatedAt: number
   folders: LibraryFolder[]
   songs: SyncSongEntry[]
+  /** Shared delete ledger so other devices can drop songs on import/sync. */
+  deleted?: Record<string, number>
 }
 
 export type SyncResult = {
@@ -220,6 +223,68 @@ function parseManifest(raw: string | null): SyncManifest {
   } catch {
     return { version: 1, updatedAt: 0, folders: [], songs: [] }
   }
+}
+
+function parseDeletedMap(raw: string | null | undefined): Record<string, number> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as { deleted?: Record<string, number> } | Record<string, number>
+    if (!parsed || typeof parsed !== 'object') return {}
+    const map =
+      'deleted' in parsed && parsed.deleted && typeof parsed.deleted === 'object'
+        ? parsed.deleted
+        : (parsed as Record<string, number>)
+    const out: Record<string, number> = {}
+    for (const [key, value] of Object.entries(map)) {
+      if (key && Number.isFinite(value)) out[key] = Number(value)
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function mergeDeletedMaps(...maps: Array<Record<string, number> | undefined>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const map of maps) {
+    if (!map) continue
+    for (const [key, value] of Object.entries(map)) {
+      if (!key || !Number.isFinite(value)) continue
+      out[key] = Math.max(out[key] || 0, value)
+    }
+  }
+  return out
+}
+
+async function applySharedDeletions(deleted: Record<string, number>): Promise<number> {
+  if (!Object.keys(deleted).length) return 0
+  const local = readTombstones()
+  writeTombstones(mergeDeletedMaps(local, deleted))
+  let removed = 0
+  const songs = await listAllLibrarySongs()
+  for (const song of songs) {
+    const key = songKey(song)
+    const deletedAt = deleted[key]
+    if (!deletedAt) continue
+    if (song.updatedAt > deletedAt) continue
+    await removeLibrarySong(song.id)
+    removed += 1
+  }
+  return removed
+}
+
+/** Drop local songs that are not present in the imported/shared package. */
+async function pruneAbsentSongs(keepKeys: Set<string>): Promise<number> {
+  let removed = 0
+  const songs = await listAllLibrarySongs()
+  for (const song of songs) {
+    const key = songKey(song)
+    if (keepKeys.has(key)) continue
+    rememberDeletedSong(song)
+    await removeLibrarySong(song.id)
+    removed += 1
+  }
+  return removed
 }
 
 function parseNotes(raw: string | null): RawNote[] {
@@ -592,11 +657,13 @@ type ArchiveIndex = {
   byBase: Map<string, Uint8Array | ArrayBuffer | string>
   manifestRaw: string | null
   manifest: SyncManifest
+  deleted: Record<string, number>
 }
 
 function indexArchiveFiles(files: Map<string, Uint8Array | ArrayBuffer | string>): ArchiveIndex {
   const byBase = new Map<string, Uint8Array | ArrayBuffer | string>()
   let manifestRaw: string | null = null
+  let deletedRaw: string | null = null
   for (const [path, data] of files) {
     const norm = normalizeArchivePath(path)
     const base = basename(norm)
@@ -604,12 +671,16 @@ function indexArchiveFiles(files: Map<string, Uint8Array | ArrayBuffer | string>
     if (base === MANIFEST_NAME || norm.endsWith(`/${MANIFEST_NAME}`)) {
       manifestRaw = archiveDataToText(data)
     }
+    if (base === DELETED_NAME || norm.endsWith(`/${DELETED_NAME}`)) {
+      deletedRaw = archiveDataToText(data)
+    }
   }
   const manifest = parseManifest(manifestRaw)
   if (!manifest.songs.length && !manifest.folders.length && !manifestRaw) {
     throw new Error(t('syncZipInvalid'))
   }
-  return { byBase, manifestRaw, manifest }
+  const deleted = mergeDeletedMaps(manifest.deleted, parseDeletedMap(deletedRaw))
+  return { byBase, manifestRaw, manifest, deleted }
 }
 
 /** Merge archive songs/media into the linked shared folder (never replaces the folder link). */
@@ -682,7 +753,7 @@ async function ensureWritableSharedFolder(): Promise<FileSystemDirectoryHandle> 
 }
 
 async function importFromFileMap(files: Map<string, Uint8Array | ArrayBuffer | string>): Promise<SyncResult> {
-  const { byBase, manifest } = indexArchiveFiles(files)
+  const { byBase, manifest, deleted } = indexArchiveFiles(files)
   const asBytes = (name: string): Promise<ArrayBuffer | null> => {
     const hit = byBase.get(name)
     if (!hit) return Promise.resolve(null)
@@ -693,7 +764,12 @@ async function importFromFileMap(files: Map<string, Uint8Array | ArrayBuffer | s
     if (!hit) return null
     return archiveDataToText(hit)
   }
-  const result = await importLibraryBundle(manifest as LibraryBundle, asBytes, asText)
+  // Folder/ZIP import mirrors the package: apply shared deletes and drop local songs
+  // that are no longer in the package (fixes phone still showing PC-deleted tracks).
+  const result = await importLibraryBundle(manifest as LibraryBundle, asBytes, asText, {
+    deleted,
+    pruneAbsent: true,
+  })
   localStorage.setItem(LAST_KEY, String(Date.now()))
   const status = getSyncStatus()
   // Do not switch sync mode / folder name — ZIP/folder dumps must not replace the shared folder.
@@ -728,8 +804,8 @@ export async function importLibraryFiles(fileList: Iterable<File>): Promise<Sync
   for (const file of fileList) {
     const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
     const name = basename(relative)
-    if (name === MANIFEST_NAME) {
-      seenManifest = true
+    if (name === MANIFEST_NAME || name === DELETED_NAME) {
+      if (name === MANIFEST_NAME) seenManifest = true
       files.set(relative, await file.text())
     } else {
       files.set(relative, await file.arrayBuffer())
@@ -810,7 +886,15 @@ export async function importLibraryBundle(
   manifest: LibraryBundle,
   readFileBytes: (name: string) => Promise<ArrayBuffer | null>,
   readNotes: (name: string) => Promise<string | null>,
-): Promise<{ pulled: number }> {
+  options: { deleted?: Record<string, number>; pruneAbsent?: boolean } = {},
+): Promise<{ pulled: number; removed?: number }> {
+  const sharedDeleted = mergeDeletedMaps(
+    options.deleted,
+    (manifest as SyncManifest).deleted,
+    readTombstones(),
+  )
+  await applySharedDeletions(sharedDeleted)
+
   const localFolders = await listAllFolders()
   const localSongs = await listAllLibrarySongs()
   const foldersById = new Map<string, LibraryFolder>()
@@ -836,9 +920,11 @@ export async function importLibraryBundle(
   await applyFolderRemap(folderRemap, [])
 
   let pulled = 0
-  const localByKey = new Map(localSongs.map((song) => [songKey(song), song]))
+  const keepKeys = new Set<string>()
+  const localByKey = new Map((await listAllLibrarySongs()).map((song) => [songKey(song), song]))
   for (const entry of manifest.songs || []) {
     const key = songKey(entry)
+    keepKeys.add(key)
     if (isTombstoned(key, entry.updatedAt || 0)) continue
     const local = localByKey.get(key)
     if (local && local.updatedAt >= entry.updatedAt) continue
@@ -866,13 +952,24 @@ export async function importLibraryBundle(
     clearDeletedSong(imported)
     pulled += 1
   }
-  return { pulled }
+
+  let removed = 0
+  if (options.pruneAbsent) {
+    removed = await pruneAbsentSongs(keepKeys)
+  }
+  return { pulled, removed }
 }
 
 export async function syncLibrary(): Promise<SyncResult> {
   const dir = await linkedDirectory('readwrite')
   const media = await dir.getDirectoryHandle(MEDIA_DIR, { create: true })
   const remote = parseManifest(await readTextFile(dir, MANIFEST_NAME))
+  const remoteDeleted = mergeDeletedMaps(
+    remote.deleted,
+    parseDeletedMap(await readTextFile(dir, DELETED_NAME)),
+    readTombstones(),
+  )
+  await applySharedDeletions(remoteDeleted)
 
   const localFolders = await listAllFolders()
   const localSongs = await listAllLibrarySongs()
@@ -1031,13 +1128,24 @@ export async function syncLibrary(): Promise<SyncResult> {
     manifestSongs.push(entry)
   }
 
+  const deleted = mergeDeletedMaps(remoteDeleted, readTombstones())
+  // Drop tombstones for songs we still keep so a revive path stays clean.
+  for (const song of manifestSongs) delete deleted[songKey(song)]
+  writeTombstones(deleted)
+
   const manifest: SyncManifest = {
     version: 1,
     updatedAt: Date.now(),
     folders: coalescedFolders.sort((a, b) => a.name.localeCompare(b.name)),
     songs: manifestSongs.sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title)),
+    deleted,
   }
   await writeFile(dir, MANIFEST_NAME, JSON.stringify(manifest, null, 2))
+  await writeFile(
+    dir,
+    DELETED_NAME,
+    JSON.stringify({ version: 1, updatedAt: manifest.updatedAt, deleted }, null, 2),
+  )
 
   const folderName = dir.name || localStorage.getItem(NAME_KEY) || t('syncFolder')
   localStorage.setItem(NAME_KEY, folderName)
@@ -1051,6 +1159,7 @@ export async function syncLibrary(): Promise<SyncResult> {
     pushed,
     skippedMedia,
     foldersUpserted: coalescedFolders.length,
+    deleted: Object.keys(deleted).length,
     folderRemap: [...folderRemap.entries()],
     coalesced: coalescedFolders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
   })
