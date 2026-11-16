@@ -222,6 +222,16 @@ export async function upsertFolder(folder: LibraryFolder): Promise<void> {
   })
 }
 
+/** Delete a folder row without emptiness checks (sync coalesce cleanup). */
+export async function deleteFolderRecord(id: string): Promise<void> {
+  if (!id) return
+  await withDb(async (db) => {
+    const tx = db.transaction(FOLDERS, 'readwrite')
+    tx.objectStore(FOLDERS).delete(id)
+    await txDone(tx)
+  })
+}
+
 export async function getSyncDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
   return withDb(async (db) => {
     if (!db.objectStoreNames.contains(SYNC)) return null

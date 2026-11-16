@@ -657,6 +657,15 @@ h1 {
   display: none;
 }
 
+.library-sync-folder-section {
+  display: grid;
+  gap: 10px;
+}
+
+.library-sync-folder-section[hidden] {
+  display: none;
+}
+
 .library-sync-panel h3 {
   margin: 0;
   font-size: 13px;
@@ -680,13 +689,23 @@ h1 {
   font-weight: 700;
 }
 
-.library-sync-folder-actions button:first-child {
+.library-sync-folder-actions #library-sync-choose {
   grid-column: 1 / -1;
 }
 
 .library-sync-folder-actions #library-sync-export,
 .library-sync-folder-actions #library-sync-import {
   grid-column: auto;
+}
+
+/* No live folder link (TV / Firefox / Android): Export ZIP is the primary action. */
+.library-sync-folder-actions.is-transport-only #library-sync-export {
+  order: -1;
+  grid-column: 1 / -1;
+  background: var(--orange);
+  color: #1a0a04;
+  border: 0;
+  font-weight: 700;
 }
 
 .library-sync-bridge-join {
@@ -700,6 +719,19 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+}
+
+/* TV remote: stack Send under the code so Down reaches it reliably. */
+.is-tv .library-sync-bridge-row {
+  grid-template-columns: 1fr;
+}
+
+.is-tv #library-sync-bridge-send {
+  min-height: 48px;
+  background: var(--orange);
+  color: #1a0a04;
+  border: 0;
+  font-weight: 700;
 }
 
 .library-sync-bridge-row input {

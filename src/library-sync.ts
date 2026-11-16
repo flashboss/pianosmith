@@ -1,6 +1,8 @@
 import { strFromU8, unzipSync, zipSync } from 'fflate'
 import { t } from './i18n'
 import {
+  ROOT_FOLDER_ID,
+  deleteFolderRecord,
   getSyncDirectoryHandle,
   listAllFolders,
   listAllLibrarySongs,
@@ -236,6 +238,100 @@ function songKey(song: { source: string; id: string }): string {
   return song.source || `id:${song.id}`
 }
 
+function folderGroupKey(parentId: string, name: string): string {
+  return `${parentId || ROOT_FOLDER_ID}\0${name.trim().toLowerCase()}`
+}
+
+function resolveFolderId(id: string, remap: Map<string, string>): string {
+  let current = id || ROOT_FOLDER_ID
+  const seen = new Set<string>()
+  while (remap.has(current)) {
+    const next = remap.get(current)!
+    if (next === current || seen.has(current)) break
+    seen.add(current)
+    current = next
+  }
+  return current || ROOT_FOLDER_ID
+}
+
+/**
+ * Merge folders that share the same parent + name (case-insensitive).
+ * Different devices often create "Queen" with different ids — keep one and remap.
+ */
+function coalesceFolders(
+  folders: LibraryFolder[],
+  preferIds?: Set<string>,
+): { folders: LibraryFolder[]; remap: Map<string, string> } {
+  const remap = new Map<string, string>()
+  const byId = new Map<string, LibraryFolder>()
+  for (const folder of folders) {
+    if (!folder?.id) continue
+    const normalized: LibraryFolder = {
+      ...folder,
+      parentId: folder.parentId || ROOT_FOLDER_ID,
+      name: folder.name.trim(),
+    }
+    if (!normalized.name) continue
+    const prev = byId.get(normalized.id)
+    if (!prev || normalized.updatedAt >= prev.updatedAt) byId.set(normalized.id, normalized)
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+    const groups = new Map<string, LibraryFolder[]>()
+    for (const folder of byId.values()) {
+      const parent = resolveFolderId(folder.parentId, remap)
+      const key = folderGroupKey(parent, folder.name)
+      const list = groups.get(key) || []
+      list.push(folder)
+      groups.set(key, list)
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      group.sort((a, b) => {
+        const aPref = preferIds?.has(a.id) ? 0 : 1
+        const bPref = preferIds?.has(b.id) ? 0 : 1
+        if (aPref !== bPref) return aPref - bPref
+        if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt
+        return a.id.localeCompare(b.id)
+      })
+      const winner = group[0]
+      const updatedAt = Math.max(...group.map((row) => row.updatedAt))
+      byId.set(winner.id, {
+        ...winner,
+        parentId: resolveFolderId(winner.parentId, remap),
+        updatedAt,
+      })
+      for (let i = 1; i < group.length; i += 1) {
+        const loser = group[i]
+        remap.set(loser.id, winner.id)
+        byId.delete(loser.id)
+        changed = true
+      }
+    }
+  }
+
+  for (const folder of byId.values()) {
+    folder.parentId = resolveFolderId(folder.parentId, remap)
+  }
+  return { folders: [...byId.values()], remap }
+}
+
+async function applyFolderRemap(
+  remap: Map<string, string>,
+  songs: Array<{ folderId: string }>,
+): Promise<void> {
+  if (!remap.size) return
+  for (const song of songs) {
+    const next = resolveFolderId(song.folderId || ROOT_FOLDER_ID, remap)
+    if (next !== (song.folderId || ROOT_FOLDER_ID)) song.folderId = next
+  }
+  for (const [loserId, winnerId] of remap) {
+    if (loserId && loserId !== winnerId) await deleteFolderRecord(loserId)
+  }
+}
+
 export function getSyncStatus(): SyncStatus {
   const folderName = (localStorage.getItem(NAME_KEY) || '').trim()
   const lastRaw = localStorage.getItem(LAST_KEY)
@@ -403,9 +499,19 @@ async function depositArchiveIntoSharedFolder(
     const prev = foldersById.get(folder.id)
     if (!prev || folder.updatedAt >= prev.updatedAt) foldersById.set(folder.id, folder)
   }
+  const preferRemote = new Set(remote.folders.map((folder) => folder.id))
+  const { folders: coalescedFolders, remap: folderRemap } = coalesceFolders(
+    [...foldersById.values()],
+    preferRemote,
+  )
 
   const mergedSongs = new Map<string, SyncSongEntry>()
-  for (const song of remote.songs) mergedSongs.set(songKey(song), song)
+  for (const song of remote.songs) {
+    mergedSongs.set(songKey(song), {
+      ...song,
+      folderId: resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap),
+    })
+  }
 
   let deposited = 0
   for (const entry of incoming.songs) {
@@ -422,7 +528,7 @@ async function depositArchiveIntoSharedFolder(
     if (notesData) await writeFile(media, notesName, new Uint8Array(archiveDataToU8(notesData)))
     mergedSongs.set(key, {
       ...entry,
-      folderId: entry.folderId || '',
+      folderId: resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap),
       media: `${MEDIA_DIR}/${mediaName}`,
       notes: `${MEDIA_DIR}/${notesName}`,
     })
@@ -432,7 +538,7 @@ async function depositArchiveIntoSharedFolder(
   const manifest: SyncManifest = {
     version: 1,
     updatedAt: Date.now(),
-    folders: [...foldersById.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    folders: coalescedFolders.sort((a, b) => a.name.localeCompare(b.name)),
     songs: [...mergedSongs.values()].sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title)),
   }
   await writeFile(dir, MANIFEST_NAME, JSON.stringify(manifest, null, 2))
@@ -583,11 +689,25 @@ export async function importLibraryBundle(
     const prev = foldersById.get(folder.id)
     if (!prev || folder.updatedAt >= prev.updatedAt) foldersById.set(folder.id, folder)
   }
+  const preferLocal = new Set(localFolders.map((folder) => folder.id))
+  const { folders: coalescedFolders, remap: folderRemap } = coalesceFolders(
+    [...foldersById.values()],
+    preferLocal,
+  )
 
-  for (const folder of foldersById.values()) {
+  for (const folder of coalescedFolders) {
     const local = localFolders.find((row) => row.id === folder.id)
     if (!local || folder.updatedAt > local.updatedAt) await upsertFolder(folder)
   }
+
+  for (const song of localSongs) {
+    const next = resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap)
+    if (next !== (song.folderId || ROOT_FOLDER_ID)) {
+      song.folderId = next
+      await putLibrarySong(song)
+    }
+  }
+  await applyFolderRemap(folderRemap, [])
 
   let pulled = 0
   const localByKey = new Map(localSongs.map((song) => [songKey(song), song]))
@@ -609,7 +729,7 @@ export async function importLibraryBundle(
       mime: entry.mime,
       bytes: data.byteLength,
       duration: entry.duration,
-      folderId: entry.folderId || '',
+      folderId: resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap),
       createdAt: entry.createdAt || entry.updatedAt || Date.now(),
       updatedAt: entry.updatedAt || Date.now(),
       data,
@@ -633,12 +753,23 @@ export async function syncLibrary(): Promise<SyncResult> {
     const prev = foldersById.get(folder.id)
     if (!prev || folder.updatedAt >= prev.updatedAt) foldersById.set(folder.id, folder)
   }
+  const preferLocal = new Set(localFolders.map((folder) => folder.id))
+  const { folders: coalescedFolders, remap: folderRemap } = coalesceFolders(
+    [...foldersById.values()],
+    preferLocal,
+  )
+  const coalescedById = new Map(coalescedFolders.map((folder) => [folder.id, folder]))
 
   let pulled = 0
   const localByKey = new Map(localSongs.map((song) => [songKey(song), song]))
   const mergedSongs = new Map<string, LibrarySong>()
 
-  for (const song of localSongs) mergedSongs.set(songKey(song), song)
+  for (const song of localSongs) {
+    const folderId = resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap)
+    const remapped = folderId === (song.folderId || ROOT_FOLDER_ID) ? song : { ...song, folderId }
+    if (remapped !== song) await putLibrarySong(remapped)
+    mergedSongs.set(songKey(remapped), remapped)
+  }
 
   for (const entry of remote.songs) {
     const key = songKey(entry)
@@ -650,6 +781,7 @@ export async function syncLibrary(): Promise<SyncResult> {
     const data = await readBinaryFile(media, mediaName)
     if (!data) continue
     const notes = parseNotes(await readTextFile(media, notesName))
+    const folderId = resolveFolderId(entry.folderId || ROOT_FOLDER_ID, folderRemap)
     const imported: LibrarySong = {
       id: local?.id || entry.id,
       title: entry.title,
@@ -658,7 +790,7 @@ export async function syncLibrary(): Promise<SyncResult> {
       mime: entry.mime,
       bytes: data.byteLength,
       duration: entry.duration,
-      folderId: entry.folderId || '',
+      folderId,
       createdAt: entry.createdAt || entry.updatedAt || Date.now(),
       updatedAt: entry.updatedAt || Date.now(),
       data,
@@ -666,17 +798,18 @@ export async function syncLibrary(): Promise<SyncResult> {
     }
     await putLibrarySong(imported)
     if (imported.folderId) {
-      const folder = foldersById.get(imported.folderId)
+      const folder = coalescedById.get(imported.folderId)
       if (folder) await upsertFolder(folder)
     }
     mergedSongs.set(key, imported)
     pulled += 1
   }
 
-  for (const folder of foldersById.values()) {
+  for (const folder of coalescedFolders) {
     const local = localFolders.find((row) => row.id === folder.id)
     if (!local || folder.updatedAt > local.updatedAt) await upsertFolder(folder)
   }
+  await applyFolderRemap(folderRemap, [])
 
   const finalSongs = [...mergedSongs.values()]
   let pushed = 0
@@ -689,14 +822,14 @@ export async function syncLibrary(): Promise<SyncResult> {
     const mediaName = `${fileId}.${ext}`
     const notesName = `${fileId}.notes.json`
     const remoteEntry = remoteByKey.get(songKey(song))
-    const folderId = song.folderId || ''
+    const folderId = resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap)
     // Moves only change folderId/updatedAt — rewrite audio only when content identity changes.
     const needsMediaWrite =
       !remoteEntry || remoteEntry.media !== `${MEDIA_DIR}/${mediaName}` || remoteEntry.bytes !== song.bytes || remoteEntry.mime !== song.mime
     const needsNotesWrite = !remoteEntry || song.updatedAt > remoteEntry.updatedAt || needsMediaWrite
     const needsMetaWrite =
       !remoteEntry ||
-      (remoteEntry.folderId || '') !== folderId ||
+      resolveFolderId(remoteEntry.folderId || ROOT_FOLDER_ID, folderRemap) !== folderId ||
       remoteEntry.title !== song.title ||
       remoteEntry.updatedAt !== song.updatedAt
     if (needsMediaWrite) await writeFile(media, mediaName, song.data)
@@ -721,7 +854,7 @@ export async function syncLibrary(): Promise<SyncResult> {
   const manifest: SyncManifest = {
     version: 1,
     updatedAt: Date.now(),
-    folders: [...foldersById.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    folders: coalescedFolders.sort((a, b) => a.name.localeCompare(b.name)),
     songs: manifestSongs.sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title)),
   }
   await writeFile(dir, MANIFEST_NAME, JSON.stringify(manifest, null, 2))

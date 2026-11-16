@@ -138,7 +138,7 @@ const it: Dict = {
   syncBridgeCodePh: 'Ab12',
   syncBridgeSend: 'Invia',
   syncBridgeHint:
-    'Stesso Server del ponte MIDI. Sulla TV crea un codice; sull’altro dispositivo inseriscilo e invia i brani salvati.',
+    'Stesso Server del ponte MIDI. Chi riceve: Display → crea codice. Chi invia: inserisci il codice e Invia (anche dalla TV verso il PC).',
   syncBridgeWaiting: 'In attesa · codice {code}',
   syncBridgeListening: 'In ascolto · codice {code}',
   syncBridgeReceiving: 'Ricevo la libreria…',
@@ -348,7 +348,7 @@ const en: Dict = {
   syncBridgeCodePh: 'Ab12',
   syncBridgeSend: 'Send',
   syncBridgeHint:
-    'Same Server as the MIDI bridge. On the TV create a code; on the other device enter it and send the saved songs.',
+    'Same Server as the MIDI bridge. Receiver: Display → create code. Sender: enter the code and Send (including TV → PC).',
   syncBridgeWaiting: 'Waiting · code {code}',
   syncBridgeListening: 'Listening · code {code}',
   syncBridgeReceiving: 'Receiving library…',

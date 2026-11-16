@@ -135,6 +135,7 @@ const libraryLoading = el<HTMLDivElement>('library-loading')
 const libraryNewFolderBtn = el<HTMLButtonElement>('library-new-folder')
 const librarySyncOpenBtn = el<HTMLButtonElement>('library-sync-open')
 const librarySyncPanel = el<HTMLDivElement>('library-sync-panel')
+const librarySyncFolderSection = el<HTMLDivElement>('library-sync-folder-section')
 const librarySyncFolder = el<HTMLParagraphElement>('library-sync-folder')
 const librarySyncLast = el<HTMLParagraphElement>('library-sync-last')
 const librarySyncFallback = el<HTMLParagraphElement>('library-sync-fallback')
@@ -774,35 +775,43 @@ function renderSyncBridgeStatus(kind: string = libraryBridge.listening ? 'listen
 }
 
 function renderSyncStatus(status: SyncStatus = getSyncStatus()) {
+  const onTv = isSmartTvUi()
   const live = status.canLinkFolder && status.mode === 'handle'
-  librarySyncFallback.hidden = status.canLinkFolder
-  librarySyncChooseBtn.hidden = !status.canLinkFolder
-  librarySyncChooseBtn.disabled = librarySyncBusy
-  librarySyncImportFolderBtn.disabled = librarySyncBusy
-  librarySyncExportBtn.disabled = librarySyncBusy
-  // ZIP import deposits into the linked shared folder — needs a writable folder link.
-  librarySyncImportBtn.hidden = !status.canLinkFolder
-  librarySyncImportBtn.disabled = librarySyncBusy || !status.canLinkFolder
-  // Live folder sync only; ZIP uses the dedicated Export/Import buttons.
-  librarySyncNowBtn.hidden = !live
-  librarySyncNowBtn.disabled = librarySyncBusy || !status.linked
-  librarySyncNowBtn.textContent = t('syncNow')
-  librarySyncDisconnectBtn.disabled = !status.linked || librarySyncBusy
-  librarySyncDisconnectBtn.hidden = !live && !status.folderName
-  // Auto-sync only applies to a live linked folder (Chromium directory handle).
-  if (librarySyncAutoLabel) librarySyncAutoLabel.hidden = !status.canLinkFolder
-  librarySyncAuto.checked = status.auto
-  librarySyncAuto.disabled = !live || librarySyncBusy
+  const folderActions = librarySyncExportBtn.parentElement
+  librarySyncOpenBtn.hidden = false
+  // TV: keep the device bridge only — folder/ZIP sync is useless with a remote.
+  librarySyncFolderSection.hidden = onTv
+  if (!onTv) {
+    // No live folder link: promote Export ZIP as the primary transport action.
+    folderActions?.classList.toggle('is-transport-only', !status.canLinkFolder)
+    librarySyncFallback.hidden = status.canLinkFolder
+    librarySyncChooseBtn.hidden = !status.canLinkFolder
+    librarySyncChooseBtn.disabled = librarySyncBusy
+    librarySyncImportFolderBtn.hidden = false
+    librarySyncImportFolderBtn.disabled = librarySyncBusy
+    librarySyncExportBtn.disabled = librarySyncBusy
+    // ZIP import deposits into the linked shared folder — needs a writable folder link.
+    librarySyncImportBtn.hidden = !status.canLinkFolder
+    librarySyncImportBtn.disabled = librarySyncBusy || !status.canLinkFolder
+    librarySyncNowBtn.hidden = !live
+    librarySyncNowBtn.disabled = librarySyncBusy || !status.linked
+    librarySyncNowBtn.textContent = t('syncNow')
+    librarySyncDisconnectBtn.disabled = !status.linked || librarySyncBusy
+    librarySyncDisconnectBtn.hidden = !live && !status.folderName
+    if (librarySyncAutoLabel) librarySyncAutoLabel.hidden = !status.canLinkFolder
+    librarySyncAuto.checked = status.auto
+    librarySyncAuto.disabled = !live || librarySyncBusy
+    librarySyncFolder.textContent = status.folderName
+      ? t('syncFolderLinked', { name: status.folderName || t('syncFolder') })
+      : t('syncFolderNone')
+    librarySyncLast.textContent = status.lastAt
+      ? t('syncLast', { when: formatSyncWhen(status.lastAt) })
+      : ''
+    librarySyncLast.hidden = !status.lastAt
+  }
   librarySyncBridgeHostBtn.disabled = librarySyncBusy || libraryBridgePulling
   librarySyncBridgeSendBtn.disabled = librarySyncBusy || libraryBridgePulling
   librarySyncBridgeStopBtn.disabled = !libraryBridge.listening && !libraryBridge.code
-  librarySyncFolder.textContent = status.folderName
-    ? t('syncFolderLinked', { name: status.folderName || t('syncFolder') })
-    : t('syncFolderNone')
-  librarySyncLast.textContent = status.lastAt
-    ? t('syncLast', { when: formatSyncWhen(status.lastAt) })
-    : ''
-  librarySyncLast.hidden = !status.lastAt
   if (libraryBridge.listening) renderSyncBridgeStatus('listen')
 }
 
@@ -842,9 +851,15 @@ function showSyncPanel() {
   librarySyncPanel.hidden = false
   librarySyncOpenBtn.setAttribute('aria-expanded', 'true')
   renderSyncStatus()
-  void restoreSyncLink().then(renderSyncStatus).catch(() => {
-    renderSyncStatus()
-  })
+  if (!isSmartTvUi()) {
+    void restoreSyncLink().then(renderSyncStatus).catch(() => {
+      renderSyncStatus()
+    })
+  }
+  if (isSmartTvUi()) {
+    // Prefer the send field: PC creates a code and listens; TV types it and sends.
+    queueMicrotask(() => focusTvEl(librarySyncBridgeCode))
+  }
 }
 
 function toggleSyncPanel() {
@@ -1052,7 +1067,11 @@ async function openLibraryModal() {
   libraryDrag.snap()
   await refreshLibraryButton()
   await renderLibraryBrowser()
-  void restoreSyncLink().then(renderSyncStatus).catch(() => undefined)
+  if (!isSmartTvUi()) {
+    void restoreSyncLink().then(renderSyncStatus).catch(() => undefined)
+  } else {
+    renderSyncStatus()
+  }
   libraryOpenBtn.setAttribute('aria-expanded', 'true')
   queueMicrotask(ensureTvFocus)
 }
@@ -1966,26 +1985,35 @@ function escapeTvTextEntry(event: KeyboardEvent): boolean {
   if (!isArrowKey(event) && !isBackKey(event)) return false
   event.preventDefault()
   event.stopPropagation()
-  const active = document.activeElement
-  if (active instanceof HTMLElement) {
+  const from = event.target instanceof HTMLElement ? event.target : null
+  if (isBackKey(event)) {
     try {
-      active.blur()
+      from?.blur()
     } catch {
       /* ignore */
     }
-  }
-  if (isBackKey(event)) {
     focusTvEl(preferredTvFocusable())
     return true
   }
   const key = event.key
   const code = event.keyCode
-  if (key === 'ArrowUp' || code === 38) moveTvFocus(0, -1)
-  else if (key === 'ArrowDown' || code === 40) moveTvFocus(0, 1)
-  else if (key === 'ArrowLeft' || code === 37) moveTvFocus(-1, 0)
-  else if (key === 'ArrowRight' || code === 39) moveTvFocus(1, 0)
-  // If we could not move (single focusable), land on a preferred control.
-  if (isTextEntryTarget(document.activeElement)) focusTvEl(preferredTvFocusable())
+  let dx = 0
+  let dy = 0
+  if (key === 'ArrowUp' || code === 38) dy = -1
+  else if (key === 'ArrowDown' || code === 40) dy = 1
+  else if (key === 'ArrowLeft' || code === 37) dx = -1
+  else if (key === 'ArrowRight' || code === 39) dx = 1
+  // Move from the field itself — blurring first loses the origin and skips siblings
+  // like the bridge "Send" button next to / below the code input.
+  moveTvFocus(dx, dy, from)
+  if (document.activeElement === from) {
+    try {
+      from?.blur()
+    } catch {
+      /* ignore */
+    }
+    focusTvEl(preferredTvFocusable())
+  }
   return true
 }
 
@@ -2319,34 +2347,44 @@ function focusTvEl(node: HTMLElement | null | undefined) {
   if (!node) return
   try {
     node.focus()
+    node.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   } catch {
     /* ignore */
   }
 }
 
-function moveTvFocus(dx: number, dy: number) {
+function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
   const items = tvFocusables()
   if (!items.length) return
-  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const active =
+    fromEl && items.includes(fromEl)
+      ? fromEl
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
   const current = active && items.includes(active) ? active : null
   if (!current) {
     focusTvEl(preferredTvFocusable() ?? items[0])
     return
   }
 
-  // Horizontal groups (library actions, keys −/count/+): prefer DOM order so
-  // small side controls stay reachable with Left/Right on the TV remote.
-  if (dx !== 0) {
-    const row = current.closest('.library-item, .settings-keys')
+  // Groups with side-by-side (or stacked) controls: prefer DOM order so the TV
+  // remote can reach every sibling (e.g. bridge code → Send).
+  if (dx !== 0 || dy !== 0) {
+    const row = current.closest(
+      '.library-item, .settings-keys, .library-sync-actions, .library-sync-bridge-row',
+    )
     if (row) {
       const rowItems = items.filter((node) => row.contains(node))
       const rowIndex = rowItems.indexOf(current)
       if (rowIndex >= 0) {
-        const sibling = rowItems[rowIndex + dx]
+        const step = dx !== 0 ? dx : dy
+        const sibling = rowItems[rowIndex + step]
         if (sibling) {
           focusTvEl(sibling)
           return
         }
+        // No sibling in that direction inside the row — fall through to spatial nav.
       }
     }
   }
