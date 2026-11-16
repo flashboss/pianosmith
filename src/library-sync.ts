@@ -19,6 +19,9 @@ const NAME_KEY = 'pianosmith.sync.folderName'
 const LAST_KEY = 'pianosmith.sync.lastAt'
 const MODE_KEY = 'pianosmith.sync.mode'
 
+/** Session cache — IndexedDB handle persistence is unreliable on some Android Chrome builds. */
+let memoryDirectoryHandle: FileSystemDirectoryHandle | null = null
+
 type SyncSongEntry = {
   id: string
   title: string
@@ -110,7 +113,11 @@ function safeFileId(id: string): string {
   return id.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || `song-${Date.now()}`
 }
 
-async function ensurePermission(handle: FileSystemDirectoryHandle, mode: 'read' | 'readwrite'): Promise<void> {
+async function ensurePermission(
+  handle: FileSystemDirectoryHandle,
+  mode: 'read' | 'readwrite',
+  options: { allowRequest?: boolean } = {},
+): Promise<void> {
   const withPermission = handle as FileSystemDirectoryHandle & {
     queryPermission?: (desc: { mode: 'read' | 'readwrite' }) => Promise<PermissionState>
     requestPermission?: (desc: { mode: 'read' | 'readwrite' }) => Promise<PermissionState>
@@ -118,12 +125,42 @@ async function ensurePermission(handle: FileSystemDirectoryHandle, mode: 'read' 
   if (withPermission.queryPermission) {
     const current = await withPermission.queryPermission({ mode })
     if (current === 'granted') return
+    // After showDirectoryPicker the user gesture is often already spent (Android Chrome).
+    // Trust the freshly picked handle instead of calling requestPermission.
+    if (options.allowRequest === false && current !== 'denied') return
+  } else if (options.allowRequest === false) {
+    return
   }
-  if (withPermission.requestPermission) {
+  if (options.allowRequest !== false && withPermission.requestPermission) {
     const next = await withPermission.requestPermission({ mode })
     if (next === 'granted') return
   }
+  if (withPermission.queryPermission) {
+    const current = await withPermission.queryPermission({ mode })
+    if (current === 'granted') return
+  }
   throw new Error(t('syncPermissionDenied'))
+}
+
+async function persistDirectoryHandle(handle: FileSystemDirectoryHandle | null): Promise<void> {
+  memoryDirectoryHandle = handle
+  try {
+    await setSyncDirectoryHandle(handle)
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+async function loadDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
+  if (memoryDirectoryHandle) return memoryDirectoryHandle
+  try {
+    const stored = await getSyncDirectoryHandle()
+    if (stored) memoryDirectoryHandle = stored
+    return stored
+  } catch (error) {
+    console.error(error)
+    return null
+  }
 }
 
 async function writeFile(
@@ -221,24 +258,26 @@ export function isSyncAutoEnabled(): boolean {
 }
 
 async function linkedDirectory(mode: 'read' | 'readwrite'): Promise<FileSystemDirectoryHandle> {
-  const handle = await getSyncDirectoryHandle()
+  const handle = await loadDirectoryHandle()
   if (!handle) throw new Error(t('syncFolderNone'))
-  await ensurePermission(handle, mode)
+  await ensurePermission(handle, mode, { allowRequest: true })
   return handle
 }
 
 export async function chooseSyncFolder(): Promise<SyncStatus> {
   if (!canPickDirectory()) throw new Error(t('syncUseZip'))
   const handle = await window.showDirectoryPicker!({ id: 'pianosmith-library', mode: 'readwrite' })
-  await ensurePermission(handle, 'readwrite')
-  await setSyncDirectoryHandle(handle)
+  // Access was granted by the picker itself. Skipping requestPermission avoids Android
+  // failures once the click gesture has been consumed by showDirectoryPicker.
+  await ensurePermission(handle, 'readwrite', { allowRequest: false })
   localStorage.setItem(MODE_KEY, 'handle')
-  localStorage.setItem(NAME_KEY, handle.name || t('syncFolder'))
+  localStorage.setItem(NAME_KEY, (handle.name || '').trim() || t('syncFolder'))
+  await persistDirectoryHandle(handle)
   return getSyncStatus()
 }
 
 export async function disconnectSyncFolder(): Promise<SyncStatus> {
-  await setSyncDirectoryHandle(null)
+  await persistDirectoryHandle(null)
   localStorage.removeItem(NAME_KEY)
   localStorage.removeItem(LAST_KEY)
   localStorage.setItem(MODE_KEY, 'files')
@@ -247,16 +286,16 @@ export async function disconnectSyncFolder(): Promise<SyncStatus> {
 
 export async function restoreSyncLink(): Promise<SyncStatus> {
   const status = getSyncStatus()
-  if (!status.canLinkFolder || status.mode !== 'handle') return status
+  if (!status.canLinkFolder || localStorage.getItem(MODE_KEY) !== 'handle') return status
   try {
-    const handle = await getSyncDirectoryHandle()
+    const handle = await loadDirectoryHandle()
     if (!handle) {
-      localStorage.setItem(MODE_KEY, 'files')
-      if (status.folderName) localStorage.removeItem(NAME_KEY)
+      // Keep the saved folder name so the UI does not flash "not linked" after a successful
+      // pick when IndexedDB could not round-trip the handle (common on Android Chrome).
       return getSyncStatus()
     }
     localStorage.setItem(MODE_KEY, 'handle')
-    localStorage.setItem(NAME_KEY, handle.name || status.folderName || t('syncFolder'))
+    localStorage.setItem(NAME_KEY, (handle.name || '').trim() || status.folderName || t('syncFolder'))
   } catch {
     // Keep cached name; permission is requested on sync.
   }
