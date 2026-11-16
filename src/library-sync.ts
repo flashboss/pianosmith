@@ -273,7 +273,7 @@ function coalesceFolders(
     const normalized: LibraryFolder = {
       ...folder,
       parentId: folder.parentId || ROOT_FOLDER_ID,
-      name: folder.name.trim(),
+      name: folder.name.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim(),
     }
     if (!normalized.name) continue
     const prev = byId.get(normalized.id)
@@ -334,6 +334,34 @@ async function applyFolderRemap(
   for (const [loserId, winnerId] of remap) {
     if (loserId && loserId !== winnerId) await deleteFolderRecord(loserId)
   }
+}
+
+/**
+ * Merge local same-named sibling folders and remap songs.
+ * Needed on TV: bridge coalesce only runs on the receiver, so a TV that *sends*
+ * keeps duplicate Queens until this heal runs.
+ */
+export async function healLibraryFolders(): Promise<{ merged: number; folders: number }> {
+  const localFolders = await listAllFolders()
+  const localSongs = await listAllLibrarySongs()
+  const prefer = new Set(localFolders.map((folder) => folder.id))
+  const { folders: coalesced, remap } = coalesceFolders(localFolders, prefer)
+  for (const folder of coalesced) await upsertFolder(folder)
+  for (const song of localSongs) {
+    const next = resolveFolderId(song.folderId || ROOT_FOLDER_ID, remap)
+    if (next !== (song.folderId || ROOT_FOLDER_ID)) {
+      await putLibrarySong({ ...song, folderId: next })
+    }
+  }
+  await applyFolderRemap(remap, [])
+  if (remap.size) {
+    console.info('[pianosmith heal folders]', {
+      merged: remap.size,
+      remap: [...remap.entries()],
+      folders: coalesced.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
+    })
+  }
+  return { merged: remap.size, folders: coalesced.length }
 }
 
 export function getSyncStatus(): SyncStatus {
@@ -638,6 +666,8 @@ export async function buildLibraryBundle(): Promise<{
   manifest: LibraryBundle
   files: LibraryBundleSongFiles[]
 }> {
+  // Heal before export/bridge push so the sender also drops duplicate folders.
+  await healLibraryFolders()
   const folders = await listAllFolders()
   const songs = await listAllLibrarySongs()
   const files: LibraryBundleSongFiles[] = []

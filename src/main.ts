@@ -36,6 +36,7 @@ import {
   disconnectSyncFolder,
   exportLibraryZip,
   getSyncStatus,
+  healLibraryFolders,
   importLibraryFiles,
   importLibraryZip,
   isSyncAutoEnabled,
@@ -1073,6 +1074,11 @@ async function openLibraryModal() {
   hideSyncPanel()
   libraryModal.hidden = false
   libraryDrag.snap()
+  try {
+    await healLibraryFolders()
+  } catch (error) {
+    console.error(error)
+  }
   await refreshLibraryButton()
   await renderLibraryBrowser()
   if (!isSmartTvUi()) {
