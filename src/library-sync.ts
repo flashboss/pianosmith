@@ -331,11 +331,10 @@ export async function exportLibraryZip(): Promise<SyncResult> {
   }
   const zipped = zipSync(entries, { level: 6 })
   downloadBlob(new Blob([new Uint8Array(zipped)], { type: 'application/zip' }), 'pianosmith-library.zip')
-  const folderName = t('syncZipPackage')
-  localStorage.setItem(MODE_KEY, 'files')
-  localStorage.setItem(NAME_KEY, folderName)
   localStorage.setItem(LAST_KEY, String(manifest.updatedAt))
-  return { pulled: 0, pushed: manifest.songs.length, folderName }
+  const status = getSyncStatus()
+  // ZIP is transport only — never replace the linked shared folder.
+  return { pulled: 0, pushed: manifest.songs.length, folderName: status.folderName || t('syncFolder') }
 }
 
 function normalizeArchivePath(path: string): string {
@@ -347,41 +346,125 @@ function basename(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-async function importFromFileMap(files: Map<string, Uint8Array | ArrayBuffer | string>): Promise<SyncResult> {
+function archiveDataToU8(data: Uint8Array | ArrayBuffer | string): Uint8Array {
+  if (typeof data === 'string') return toUint8(data)
+  if (data instanceof Uint8Array) return data
+  return new Uint8Array(data)
+}
+
+function archiveDataToText(data: Uint8Array | ArrayBuffer | string): string {
+  if (typeof data === 'string') return data
+  return strFromU8(data instanceof Uint8Array ? data : new Uint8Array(data))
+}
+
+function archiveDataToBuffer(data: Uint8Array | ArrayBuffer | string): ArrayBuffer {
+  if (typeof data === 'string') return toUint8(data).buffer as ArrayBuffer
+  if (data instanceof Uint8Array) {
+    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+  }
+  return data
+}
+
+type ArchiveIndex = {
+  byBase: Map<string, Uint8Array | ArrayBuffer | string>
+  manifestRaw: string | null
+  manifest: SyncManifest
+}
+
+function indexArchiveFiles(files: Map<string, Uint8Array | ArrayBuffer | string>): ArchiveIndex {
   const byBase = new Map<string, Uint8Array | ArrayBuffer | string>()
   let manifestRaw: string | null = null
   for (const [path, data] of files) {
     const norm = normalizeArchivePath(path)
-    byBase.set(basename(norm), data)
-    if (basename(norm) === MANIFEST_NAME || norm.endsWith(`/${MANIFEST_NAME}`)) {
-      manifestRaw = typeof data === 'string' ? data : strFromU8(data instanceof Uint8Array ? data : new Uint8Array(data))
+    const base = basename(norm)
+    byBase.set(base, data)
+    if (base === MANIFEST_NAME || norm.endsWith(`/${MANIFEST_NAME}`)) {
+      manifestRaw = archiveDataToText(data)
     }
   }
-  const manifest = parseManifest(manifestRaw) as LibraryBundle
+  const manifest = parseManifest(manifestRaw)
   if (!manifest.songs.length && !manifest.folders.length && !manifestRaw) {
     throw new Error(t('syncZipInvalid'))
   }
+  return { byBase, manifestRaw, manifest }
+}
+
+/** Merge archive songs/media into the linked shared folder (never replaces the folder link). */
+async function depositArchiveIntoSharedFolder(
+  dir: FileSystemDirectoryHandle,
+  files: Map<string, Uint8Array | ArrayBuffer | string>,
+): Promise<number> {
+  const { byBase, manifest: incoming } = indexArchiveFiles(files)
+  const media = await dir.getDirectoryHandle(MEDIA_DIR, { create: true })
+  const remote = parseManifest(await readTextFile(dir, MANIFEST_NAME))
+
+  const foldersById = new Map<string, LibraryFolder>()
+  for (const folder of [...remote.folders, ...incoming.folders]) {
+    const prev = foldersById.get(folder.id)
+    if (!prev || folder.updatedAt >= prev.updatedAt) foldersById.set(folder.id, folder)
+  }
+
+  const mergedSongs = new Map<string, SyncSongEntry>()
+  for (const song of remote.songs) mergedSongs.set(songKey(song), song)
+
+  let deposited = 0
+  for (const entry of incoming.songs) {
+    const key = songKey(entry)
+    const existing = mergedSongs.get(key)
+    if (existing && existing.updatedAt >= entry.updatedAt) continue
+    const mediaName = basename(entry.media || '')
+    const notesName = basename(entry.notes || '')
+    if (!mediaName || !notesName) continue
+    const mediaData = byBase.get(mediaName)
+    if (!mediaData) continue
+    await writeFile(media, mediaName, new Uint8Array(archiveDataToU8(mediaData)))
+    const notesData = byBase.get(notesName)
+    if (notesData) await writeFile(media, notesName, new Uint8Array(archiveDataToU8(notesData)))
+    mergedSongs.set(key, {
+      ...entry,
+      folderId: entry.folderId || '',
+      media: `${MEDIA_DIR}/${mediaName}`,
+      notes: `${MEDIA_DIR}/${notesName}`,
+    })
+    deposited += 1
+  }
+
+  const manifest: SyncManifest = {
+    version: 1,
+    updatedAt: Date.now(),
+    folders: [...foldersById.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    songs: [...mergedSongs.values()].sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title)),
+  }
+  await writeFile(dir, MANIFEST_NAME, JSON.stringify(manifest, null, 2))
+  return deposited
+}
+
+async function ensureWritableSharedFolder(): Promise<FileSystemDirectoryHandle> {
+  const status = getSyncStatus()
+  if (!status.canLinkFolder) throw new Error(t('syncZipNeedsFolder'))
+  if (status.mode !== 'handle') {
+    await chooseSyncFolder()
+  }
+  return linkedDirectory('readwrite')
+}
+
+async function importFromFileMap(files: Map<string, Uint8Array | ArrayBuffer | string>): Promise<SyncResult> {
+  const { byBase, manifest } = indexArchiveFiles(files)
   const asBytes = (name: string): Promise<ArrayBuffer | null> => {
     const hit = byBase.get(name)
     if (!hit) return Promise.resolve(null)
-    if (typeof hit === 'string') return Promise.resolve(toUint8(hit).buffer as ArrayBuffer)
-    if (hit instanceof Uint8Array) {
-      return Promise.resolve(hit.buffer.slice(hit.byteOffset, hit.byteOffset + hit.byteLength) as ArrayBuffer)
-    }
-    return Promise.resolve(hit)
+    return Promise.resolve(archiveDataToBuffer(hit))
   }
   const asText = async (name: string): Promise<string | null> => {
     const hit = byBase.get(name)
     if (!hit) return null
-    if (typeof hit === 'string') return hit
-    return strFromU8(hit instanceof Uint8Array ? hit : new Uint8Array(hit))
+    return archiveDataToText(hit)
   }
-  const result = await importLibraryBundle(manifest, asBytes, asText)
-  const folderName = t('syncZipPackage')
-  localStorage.setItem(MODE_KEY, 'files')
-  localStorage.setItem(NAME_KEY, folderName)
+  const result = await importLibraryBundle(manifest as LibraryBundle, asBytes, asText)
   localStorage.setItem(LAST_KEY, String(Date.now()))
-  return { pulled: result.pulled, pushed: 0, folderName }
+  const status = getSyncStatus()
+  // Do not switch sync mode / folder name — ZIP/folder dumps must not replace the shared folder.
+  return { pulled: result.pulled, pushed: 0, folderName: status.folderName || t('syncFolder') }
 }
 
 export async function importLibraryZip(file: File): Promise<SyncResult> {
@@ -394,7 +477,15 @@ export async function importLibraryZip(file: File): Promise<SyncResult> {
   }
   const files = new Map<string, Uint8Array>()
   for (const [path, data] of Object.entries(unzipped)) files.set(path, data)
-  return importFromFileMap(files)
+
+  const dir = await ensureWritableSharedFolder()
+  const deposited = await depositArchiveIntoSharedFolder(dir, files)
+  const synced = await syncLibrary()
+  return {
+    pulled: synced.pulled,
+    pushed: Math.max(synced.pushed, deposited),
+    folderName: synced.folderName,
+  }
 }
 
 /** Import from &lt;input webkitdirectory&gt; or a flat file list that includes the manifest. */
@@ -412,26 +503,25 @@ export async function importLibraryFiles(fileList: Iterable<File>): Promise<Sync
     }
   }
   if (!seenManifest) throw new Error(t('syncZipInvalid'))
-  const folderHint = [...fileList][0] as File & { webkitRelativePath?: string } | undefined
-  const top = folderHint?.webkitRelativePath?.split(/[/\\]/)[0]
-  const result = await importFromFileMap(files)
-  if (top) {
-    localStorage.setItem(NAME_KEY, top)
-    result.folderName = top
+
+  const status = getSyncStatus()
+  if (status.canLinkFolder && status.mode === 'handle') {
+    const dir = await linkedDirectory('readwrite')
+    const deposited = await depositArchiveIntoSharedFolder(dir, files)
+    const synced = await syncLibrary()
+    return {
+      pulled: synced.pulled,
+      pushed: Math.max(synced.pushed, deposited),
+      folderName: synced.folderName,
+    }
   }
-  return result
+
+  // No live shared folder (e.g. Android): pull into the local library only.
+  return importFromFileMap(files)
 }
 
 export async function syncLibraryOrExport(): Promise<SyncResult> {
-  const status = getSyncStatus()
-  if (status.canLinkFolder && status.mode === 'handle') {
-    try {
-      return await syncLibrary()
-    } catch {
-      // Fall through to zip if the live folder handle is unavailable.
-    }
-  }
-  return exportLibraryZip()
+  return syncLibrary()
 }
 
 export async function buildLibraryBundle(): Promise<{

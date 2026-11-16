@@ -110,16 +110,19 @@ const it: Dict = {
   syncImportFolder: 'Importa cartella',
   syncNow: 'Sincronizza ora',
   syncExportZip: 'Esporta ZIP',
-  syncImportZip: 'Importa ZIP',
+  syncImportZip: 'Importa ZIP nella cartella',
   syncDisconnect: 'Scollega',
   syncAuto: 'Sincronizza automaticamente dopo salvataggi, spostamenti e cartelle',
   syncHint:
-    'Su Chrome/Edge puoi collegare una cartella condivisa. Su qualsiasi browser: esporta uno ZIP su Drive/Dropbox e importalo sull’altro dispositivo.',
+    'Collega una cartella condivisa (Drive, Dropbox, rete…). Lo ZIP serve solo a trasportare i brani: Importa ZIP li riporta dentro la cartella collegata, senza sostituirla.',
   syncUnsupported: 'La sync su cartella richiede Chrome o Edge su computer.',
-  syncUseZip: 'Su questo dispositivo usa Esporta/Importa ZIP oppure Importa cartella.',
+  syncUseZip:
+    'Su questo dispositivo non si può scrivere nella cartella. Usa Importa cartella dopo aver messo i file nella cartella condivisa, oppure Esporta ZIP su un computer con Chrome/Edge.',
   syncFolderAborted: 'Selezione cartella annullata o non riuscita',
   syncZipPackage: 'Pacchetto ZIP',
   syncZipExported: 'ZIP esportato · {n} brani',
+  syncZipNeedsFolder:
+    'Collega prima la cartella condivisa (Chrome/Edge). Lo ZIP va riportato dentro quella cartella, non la sostituisce.',
   syncZipInvalid: 'ZIP o cartella non validi (manca pianosmith-library.json)',
   syncLast: 'Ultima sync: {when}',
   syncNever: 'mai',
@@ -317,16 +320,19 @@ const en: Dict = {
   syncImportFolder: 'Import folder',
   syncNow: 'Sync now',
   syncExportZip: 'Export ZIP',
-  syncImportZip: 'Import ZIP',
+  syncImportZip: 'Import ZIP into folder',
   syncDisconnect: 'Disconnect',
   syncAuto: 'Sync automatically after saves, moves, and folder changes',
   syncHint:
-    'On Chrome/Edge you can link a shared folder for live sync. On any browser, export a ZIP into Drive/Dropbox and import it on the other device.',
+    'Link a shared folder (Drive, Dropbox, network…). ZIP is only transport: Import ZIP deposits songs into the linked folder and never replaces it.',
   syncUnsupported: 'Shared-folder sync needs Chrome or Edge on a computer.',
-  syncUseZip: 'On this device use Export/Import ZIP or Import folder.',
+  syncUseZip:
+    'This device cannot write to the shared folder. Use Import folder after placing files in the shared folder, or Export ZIP on a computer with Chrome/Edge.',
   syncFolderAborted: 'Folder selection cancelled or failed',
   syncZipPackage: 'ZIP package',
   syncZipExported: 'ZIP exported · {n} songs',
+  syncZipNeedsFolder:
+    'Link the shared folder first (Chrome/Edge). ZIP is deposited into that folder; it does not replace it.',
   syncZipInvalid: 'Invalid ZIP or folder (missing pianosmith-library.json)',
   syncLast: 'Last sync: {when}',
   syncNever: 'never',
@@ -499,7 +505,7 @@ const fr: Dict = {
   syncDisconnect: 'Dissocier',
   syncAuto: 'Synchroniser automatiquement après enregistrements, déplacements et dossiers',
   syncHint:
-    'Choisissez un dossier partagé (Drive, Dropbox, réseau…). Les appareils qui utilisent le même dossier peuvent échanger les morceaux enregistrés.',
+    'Liez un dossier partagé (Drive, Dropbox, réseau…). Le ZIP ne sert qu’au transport : Importer ZIP dépose les morceaux dans le dossier lié, sans le remplacer.',
   syncUnsupported: 'La sync de dossier nécessite Chrome ou Edge sur ordinateur.',
   syncLast: 'Dernière sync : {when}',
   syncNever: 'jamais',
@@ -669,7 +675,7 @@ const es: Dict = {
   syncDisconnect: 'Desvincular',
   syncAuto: 'Sincronizar automáticamente al guardar una canción',
   syncHint:
-    'Elige una carpeta compartida (Drive, Dropbox, red…). Los dispositivos que usen la misma carpeta pueden intercambiar canciones guardadas.',
+    'Vincula una carpeta compartida (Drive, Dropbox, red…). El ZIP solo transporta: Importar ZIP deposita las canciones en la carpeta vinculada, sin sustituirla.',
   syncUnsupported: 'La sync de carpeta requiere Chrome o Edge en un ordenador.',
   syncLast: 'Última sync: {when}',
   syncNever: 'nunca',
@@ -821,7 +827,7 @@ const de: Dict = {
   syncDisconnect: 'Trennen',
   syncAuto: 'Nach dem Speichern automatisch synchronisieren',
   syncHint:
-    'Wähle einen freigegebenen Ordner (Drive, Dropbox, Netzwerk…). Geräte mit demselben Ordner können gespeicherte Stücke austauschen.',
+    'Verbinde einen freigegebenen Ordner (Drive, Dropbox, Netzwerk…). ZIP ist nur Transport: ZIP importieren legt Stücke in den verknüpften Ordner ab und ersetzt ihn nicht.',
   syncUnsupported: 'Ordner-Sync braucht Chrome oder Edge am Computer.',
   syncLast: 'Letzte Sync: {when}',
   syncNever: 'nie',
@@ -974,7 +980,8 @@ const zh: Dict = {
   syncNow: '立即同步',
   syncDisconnect: '断开',
   syncAuto: '保存曲目后自动同步',
-  syncHint: '选择共享文件夹（网盘、网络共享等）。使用同一文件夹的设备可以交换已保存曲目。',
+  syncHint:
+    '链接共享文件夹（网盘、网络共享等）。ZIP 仅用于传输：导入 ZIP 会写入已链接的文件夹，不会替换它。',
   syncUnsupported: '文件夹同步需要在电脑上使用 Chrome 或 Edge。',
   syncLast: '上次同步：{when}',
   syncNever: '从未',
@@ -1131,7 +1138,7 @@ const ja: Dict = {
   syncDisconnect: '解除',
   syncAuto: '曲を保存したら自動で同期する',
   syncHint:
-    '共有フォルダ（Drive、Dropbox、ネットワークなど）を選びます。同じフォルダを使う端末で保存曲を共有できます。',
+    '共有フォルダ（Drive、Dropbox、ネットワークなど）を連携します。ZIP は運搬用のみ：インポートは連携フォルダへ書き込み、フォルダ自体は置き換えません。',
   syncUnsupported: 'フォルダ同期にはパソコンの Chrome または Edge が必要です。',
   syncLast: '前回の同期: {when}',
   syncNever: 'なし',

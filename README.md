@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 . Drop an MP3, WAV, M4A, FLAC, or MIDI file, paste a music link, or play the built-in demo. Loaded tracks are kept in a local library (IndexedDB): open **Brani salvati** to browse them, create folders, move tracks, or remove them without downloading or transcribing again. Use the gear next to **Nuova cartella** for sync: a **device bridge** (TV creates a code, another device sends the library over the same Server as MIDI), a **live shared folder** on Chromium (Drive, Dropbox, network share), or **ZIP export/import** on any browser. **Video** records a 1920×1080 WebM of the performance. **MIDI** downloads the transcribed notes.
+Open http://localhost:5173 . Drop an MP3, WAV, M4A, FLAC, or MIDI file, paste a music link, or play the built-in demo. Loaded tracks are kept in a local library (IndexedDB): open **Brani salvati** to browse them, create folders, move tracks, or remove them without downloading or transcribing again. Use the gear next to **Nuova cartella** for sync: a **device bridge** (TV creates a code, another device sends the library over the same Server as MIDI), a **live shared folder** on Chromium (Drive, Dropbox, network share), and **ZIP** only as transport into that folder (import deposits songs; it never replaces the linked folder). **Video** records a 1920×1080 WebM of the performance. **MIDI** downloads the transcribed notes.
 
 Shared links need `yt-dlp` and `ffmpeg` on the machine running the server. Tracks longer than 10 minutes are rejected. Direct files are limited to 45 MB.
 

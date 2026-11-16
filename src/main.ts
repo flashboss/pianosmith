@@ -780,7 +780,9 @@ function renderSyncStatus(status: SyncStatus = getSyncStatus()) {
   librarySyncChooseBtn.disabled = librarySyncBusy
   librarySyncImportFolderBtn.disabled = librarySyncBusy
   librarySyncExportBtn.disabled = librarySyncBusy
-  librarySyncImportBtn.disabled = librarySyncBusy
+  // ZIP import deposits into the linked shared folder — needs a writable folder link.
+  librarySyncImportBtn.hidden = !status.canLinkFolder
+  librarySyncImportBtn.disabled = librarySyncBusy || !status.canLinkFolder
   // Live folder sync only; ZIP uses the dedicated Export/Import buttons.
   librarySyncNowBtn.hidden = !live
   librarySyncNowBtn.disabled = librarySyncBusy || !status.linked
@@ -863,11 +865,7 @@ async function runLibrarySync(options: { quiet?: boolean } = {}) {
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
     if (!options.quiet || result.pulled > 0 || result.pushed > 0) {
-      toast(
-        result.pulled === 0 && result.pushed > 0 && status.mode !== 'handle'
-          ? t('syncZipExported', { n: result.pushed })
-          : t('syncDone', { pulled: result.pulled, pushed: result.pushed }),
-      )
+      toast(t('syncDone', { pulled: result.pulled, pushed: result.pushed }))
     }
   } catch (error) {
     if (!options.quiet) toast(error instanceof Error ? error.message : t('syncFail'))
@@ -888,6 +886,7 @@ function maybeAutoSyncLibrary() {
 
 async function runLibraryImport(
   importer: () => Promise<{ pulled: number; pushed: number; folderName: string }>,
+  options: { successToast?: (result: { pulled: number; pushed: number }) => string } = {},
 ) {
   if (librarySyncBusy) return
   librarySyncBusy = true
@@ -898,7 +897,10 @@ async function runLibraryImport(
     renderSyncStatus(getSyncStatus())
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
-    toast(t('syncDone', { pulled: result.pulled, pushed: result.pushed }))
+    toast(
+      options.successToast?.(result) ??
+        t('syncDone', { pulled: result.pulled, pushed: result.pushed }),
+    )
   } catch (error) {
     toast(error instanceof Error ? error.message : t('syncFail'))
     renderSyncStatus()
@@ -1437,11 +1439,33 @@ librarySyncImportFolderBtn.addEventListener('click', () => {
   librarySyncDirInput.click()
 })
 librarySyncExportBtn.addEventListener('click', () => {
-  void runLibraryImport(() => exportLibraryZip())
+  void runLibraryImport(() => exportLibraryZip(), {
+    successToast: (result) => t('syncZipExported', { n: result.pushed }),
+  })
 })
 librarySyncImportBtn.addEventListener('click', () => {
-  librarySyncZipInput.value = ''
-  librarySyncZipInput.click()
+  void (async () => {
+    const status = getSyncStatus()
+    if (!status.canLinkFolder) {
+      toast(t('syncZipNeedsFolder'))
+      return
+    }
+    if (status.mode !== 'handle') {
+      try {
+        const next = await chooseSyncFolder()
+        renderSyncStatus(next)
+      } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          toast(t('syncFolderAborted'))
+          return
+        }
+        toast(error instanceof Error ? error.message : t('syncFail'))
+        return
+      }
+    }
+    librarySyncZipInput.value = ''
+    librarySyncZipInput.click()
+  })()
 })
 librarySyncZipInput.addEventListener('change', () => {
   const file = librarySyncZipInput.files?.[0]
