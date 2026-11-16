@@ -6,8 +6,9 @@ const DB_VERSION = 3
 const SONGS = 'songs'
 const FOLDERS = 'folders'
 const SYNC = 'sync'
-const MAX_SONGS = 40
-const MAX_BYTES = 220 * 1024 * 1024
+/** Soft cap for newly saved songs only — sync/import must not prune the library mid-merge. */
+const MAX_SONGS = 200
+const MAX_BYTES = 512 * 1024 * 1024
 
 export const SYNC_DIR_KEY = 'directory'
 
@@ -204,7 +205,8 @@ export async function putLibrarySong(song: LibrarySong): Promise<LibrarySongMeta
       })),
     }
     store.put(next)
-    await prune(store, next.id)
+    // Do not prune here: sync/import batch writes would delete siblings mid-merge while the
+    // shared-folder manifest still listed them (browser empty, JSON still complete).
     await txDone(tx)
     return toMeta(next)
   })
