@@ -66,7 +66,7 @@
           <ul id="yt-results" class="yt-results" hidden role="listbox" data-i18n-aria-label="searchResults" aria-label="Search results"></ul>
           <p id="yt-hint" class="hint"></p>
           <button id="demo" type="button" class="ghost wide" data-i18n="watchDemo">Watch the demo</button>
-          <button id="library-open" type="button" class="ghost wide" data-i18n="savedSongs">Saved songs</button>
+          <button id="library-open" type="button" class="ghost wide">Saved songs</button>
           <details>
             <summary data-i18n="tvPhoneServer">TV, devices, and server</summary>
             <label class="server">
@@ -226,6 +226,25 @@
             <button id="library-folder-cancel" type="button" class="ghost" data-i18n="folderCancel">Cancel</button>
           </form>
           <div id="library-sync-panel" class="library-sync-panel" hidden>
+            <h3 data-i18n="syncTitle">Shared folder</h3>
+            <p id="library-sync-folder" class="hint" data-i18n="syncFolderNone">No shared folder linked.</p>
+            <p id="library-sync-last" class="hint"></p>
+            <p id="library-sync-unsupported" class="hint" hidden data-i18n="syncUnsupported">
+              Shared-folder sync needs Chrome or Edge on a computer.
+            </p>
+            <div class="library-sync-actions library-sync-folder-actions">
+              <button id="library-sync-choose" type="button" data-i18n="syncChooseFolder">Choose folder</button>
+              <button id="library-sync-now" type="button" class="ghost" data-i18n="syncNow">Sync now</button>
+              <button id="library-sync-disconnect" type="button" class="ghost" data-i18n="syncDisconnect">Disconnect</button>
+            </div>
+            <label class="library-sync-auto">
+              <input id="library-sync-auto" type="checkbox" />
+              <span data-i18n="syncAuto">Sync automatically after saving a song</span>
+            </label>
+            <p class="hint" data-i18n="syncHint">
+              Pick a shared folder (Drive, Dropbox, network share…). Devices that use the same folder can exchange saved songs.
+            </p>
+
             <h3 data-i18n="syncBridgeTitle">Device bridge</h3>
             <p id="library-sync-bridge-status" class="hint" data-i18n="syncBridgeIdle">Bridge off</p>
             <div class="library-sync-actions">
@@ -249,25 +268,6 @@
             </label>
             <p class="hint" data-i18n="syncBridgeHint">
               Same Server as the MIDI bridge. On the TV create a code; on the other device enter it and send the saved songs.
-            </p>
-
-            <h3 data-i18n="syncTitle">Shared folder</h3>
-            <p id="library-sync-folder" class="hint" data-i18n="syncFolderNone">No shared folder linked.</p>
-            <p id="library-sync-last" class="hint"></p>
-            <p id="library-sync-unsupported" class="hint" hidden data-i18n="syncUnsupported">
-              Shared-folder sync needs Chrome or Edge on a computer.
-            </p>
-            <div class="library-sync-actions library-sync-folder-actions">
-              <button id="library-sync-choose" type="button" data-i18n="syncChooseFolder">Choose folder</button>
-              <button id="library-sync-now" type="button" class="ghost" data-i18n="syncNow">Sync now</button>
-              <button id="library-sync-disconnect" type="button" class="ghost" data-i18n="syncDisconnect">Disconnect</button>
-            </div>
-            <label class="library-sync-auto">
-              <input id="library-sync-auto" type="checkbox" />
-              <span data-i18n="syncAuto">Sync automatically after saving a song</span>
-            </label>
-            <p class="hint" data-i18n="syncHint">
-              Pick a shared folder (Drive, Dropbox, network share…). Devices that use the same folder can exchange saved songs.
             </p>
           </div>
           <div id="library-loading" class="library-loading" hidden data-i18n-aria-label="libraryLoading" aria-label="Loading saved songs" aria-live="polite">

@@ -1008,6 +1008,7 @@ function closeLibraryModal() {
   hideSyncPanel()
   libraryOpenBtn.setAttribute('aria-expanded', 'false')
   libraryDrag.stopDrag()
+  void refreshLibraryButton()
 }
 
 async function loadSaved(id: string) {
@@ -1333,6 +1334,7 @@ libraryModal.addEventListener('click', (event) => {
     void removeFolder(id)
       .then(async () => {
         if (currentLibraryFolder === id) currentLibraryFolder = ROOT_FOLDER_ID
+        await refreshLibraryButton()
         await renderLibraryBrowser()
       })
       .catch((error: unknown) => {
