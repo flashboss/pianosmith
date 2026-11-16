@@ -55,6 +55,8 @@ export type SyncResult = {
   pulled: number
   pushed: number
   folderName: string
+  /** Local songs dropped because they were absent from the imported package. */
+  removed?: number
   /** Remote songs skipped because media files were missing/unreadable. */
   skippedMedia?: number
   /** Folders written into IndexedDB after coalesce. */
@@ -80,6 +82,8 @@ export type LibraryBundle = {
     media: string
     notes: string
   }>
+  /** Shared delete ledger so ZIP / Import folder can drop songs on other devices. */
+  deleted?: Record<string, number>
 }
 
 export type LibraryBundleSongFiles = {
@@ -610,8 +614,12 @@ function toUint8(data: ArrayBuffer | string): Uint8Array {
 
 export async function exportLibraryZip(): Promise<SyncResult> {
   const { manifest, files } = await buildLibraryBundle()
+  const deleted = mergeDeletedMaps(manifest.deleted, readTombstones())
   const entries: Record<string, Uint8Array> = {
-    [MANIFEST_NAME]: toUint8(JSON.stringify(manifest, null, 2)),
+    [MANIFEST_NAME]: toUint8(JSON.stringify({ ...manifest, deleted }, null, 2)),
+    [DELETED_NAME]: toUint8(
+      JSON.stringify({ version: 1, updatedAt: manifest.updatedAt, deleted }, null, 2),
+    ),
   }
   for (const file of files) {
     entries[`${MEDIA_DIR}/${file.mediaName}`] = toUint8(file.data)
@@ -688,9 +696,14 @@ async function depositArchiveIntoSharedFolder(
   dir: FileSystemDirectoryHandle,
   files: Map<string, Uint8Array | ArrayBuffer | string>,
 ): Promise<number> {
-  const { byBase, manifest: incoming } = indexArchiveFiles(files)
+  const { byBase, manifest: incoming, deleted: incomingDeleted } = indexArchiveFiles(files)
   const media = await dir.getDirectoryHandle(MEDIA_DIR, { create: true })
   const remote = parseManifest(await readTextFile(dir, MANIFEST_NAME))
+  const remoteDeleted = mergeDeletedMaps(
+    remote.deleted,
+    parseDeletedMap(await readTextFile(dir, DELETED_NAME)),
+    incomingDeleted,
+  )
 
   const foldersById = new Map<string, LibraryFolder>()
   for (const folder of [...remote.folders, ...incoming.folders]) {
@@ -703,9 +716,27 @@ async function depositArchiveIntoSharedFolder(
     preferRemote,
   )
 
+  const incomingKeys = new Set(incoming.songs.map((song) => songKey(song)))
+  // Full-package imports (ZIP / folder dump) replace the song set: drop remote-only
+  // tracks and anything listed in the shared delete ledger.
+  const mirrorPackage = incoming.songs.length > 0 || Object.keys(incomingDeleted).length > 0
+
   const mergedSongs = new Map<string, SyncSongEntry>()
   for (const song of remote.songs) {
-    mergedSongs.set(songKey(song), {
+    const key = songKey(song)
+    const drop =
+      (mirrorPackage && !incomingKeys.has(key)) ||
+      (Boolean(remoteDeleted[key]) && !incomingKeys.has(key)) ||
+      isTombstoned(key, song.updatedAt || 0)
+    if (drop) {
+      const mediaName = basename(song.media || '')
+      const notesName = basename(song.notes || '')
+      if (mediaName) await removeFileIfExists(media, mediaName)
+      if (notesName) await removeFileIfExists(media, notesName)
+      if (!incomingKeys.has(key) && !remoteDeleted[key]) remoteDeleted[key] = Date.now()
+      continue
+    }
+    mergedSongs.set(key, {
       ...song,
       folderId: resolveFolderId(song.folderId || ROOT_FOLDER_ID, folderRemap),
     })
@@ -714,6 +745,7 @@ async function depositArchiveIntoSharedFolder(
   let deposited = 0
   for (const entry of incoming.songs) {
     const key = songKey(entry)
+    if (isTombstoned(key, entry.updatedAt || 0)) continue
     const existing = mergedSongs.get(key)
     if (existing && existing.updatedAt >= entry.updatedAt) continue
     const mediaName = basename(entry.media || '')
@@ -730,16 +762,26 @@ async function depositArchiveIntoSharedFolder(
       media: `${MEDIA_DIR}/${mediaName}`,
       notes: `${MEDIA_DIR}/${notesName}`,
     })
+    delete remoteDeleted[key]
     deposited += 1
   }
+
+  const deleted = mergeDeletedMaps(remoteDeleted)
+  for (const song of mergedSongs.values()) delete deleted[songKey(song)]
 
   const manifest: SyncManifest = {
     version: 1,
     updatedAt: Date.now(),
     folders: coalescedFolders.sort((a, b) => a.name.localeCompare(b.name)),
     songs: [...mergedSongs.values()].sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title)),
+    deleted,
   }
   await writeFile(dir, MANIFEST_NAME, JSON.stringify(manifest, null, 2))
+  await writeFile(
+    dir,
+    DELETED_NAME,
+    JSON.stringify({ version: 1, updatedAt: manifest.updatedAt, deleted }, null, 2),
+  )
   return deposited
 }
 
@@ -772,8 +814,19 @@ async function importFromFileMap(files: Map<string, Uint8Array | ArrayBuffer | s
   })
   localStorage.setItem(LAST_KEY, String(Date.now()))
   const status = getSyncStatus()
+  console.info('[pianosmith import package]', {
+    packageSongs: manifest.songs.length,
+    pulled: result.pulled,
+    removed: result.removed ?? 0,
+    deletedKeys: Object.keys(deleted).length,
+  })
   // Do not switch sync mode / folder name — ZIP/folder dumps must not replace the shared folder.
-  return { pulled: result.pulled, pushed: 0, folderName: status.folderName || t('syncFolder') }
+  return {
+    pulled: result.pulled,
+    pushed: 0,
+    removed: result.removed ?? 0,
+    folderName: status.folderName || t('syncFolder'),
+  }
 }
 
 export async function importLibraryZip(file: File): Promise<SyncResult> {
@@ -787,14 +840,13 @@ export async function importLibraryZip(file: File): Promise<SyncResult> {
   const files = new Map<string, Uint8Array>()
   for (const [path, data] of Object.entries(unzipped)) files.set(path, data)
 
-  const dir = await ensureWritableSharedFolder()
-  const deposited = await depositArchiveIntoSharedFolder(dir, files)
-  const synced = await syncLibrary()
-  return {
-    pulled: synced.pulled,
-    pushed: Math.max(synced.pushed, deposited),
-    folderName: synced.folderName,
+  // Deposit into the linked folder when available, then always mirror the package
+  // into IndexedDB with pruneAbsent (syncLibrary merge alone keeps local orphans).
+  if (getSyncStatus().canLinkFolder) {
+    const dir = await ensureWritableSharedFolder()
+    await depositArchiveIntoSharedFolder(dir, files)
   }
+  return importFromFileMap(files)
 }
 
 /** Import from &lt;input webkitdirectory&gt; or a flat file list that includes the manifest. */
@@ -816,16 +868,10 @@ export async function importLibraryFiles(fileList: Iterable<File>): Promise<Sync
   const status = getSyncStatus()
   if (status.canLinkFolder && status.mode === 'handle') {
     const dir = await linkedDirectory('readwrite')
-    const deposited = await depositArchiveIntoSharedFolder(dir, files)
-    const synced = await syncLibrary()
-    return {
-      pulled: synced.pulled,
-      pushed: Math.max(synced.pushed, deposited),
-      folderName: synced.folderName,
-    }
+    await depositArchiveIntoSharedFolder(dir, files)
   }
 
-  // No live shared folder (e.g. Android): pull into the local library only.
+  // Always mirror the package into the local library (Android and PC).
   return importFromFileMap(files)
 }
 
@@ -871,12 +917,16 @@ export async function buildLibraryBundle(): Promise<{
     })
   }
 
+  const deleted = mergeDeletedMaps(readTombstones())
+  for (const song of manifestSongs) delete deleted[songKey(song)]
+
   return {
     manifest: {
       version: 1,
       updatedAt: Date.now(),
       folders,
       songs: manifestSongs.sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title)),
+      deleted,
     },
     files,
   }
