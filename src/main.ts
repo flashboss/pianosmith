@@ -17,6 +17,7 @@ import {
   countLibrarySongs,
   createFolder,
   fileSourceKey,
+  ensureLibraryReady,
   folderOptions,
   folderPath,
   formatDuration,
@@ -990,7 +991,8 @@ function appendLibraryRow(options: {
   const actions = document.createElement('div')
   actions.className = 'library-actions'
 
-  if (options.kind === 'song') {
+  // Native <select> steals the remote on Tizen; move stays available on phone/desktop.
+  if (options.kind === 'song' && !isSmartTvUi()) {
     const move = document.createElement('select')
     move.className = 'library-move'
     move.dataset.library = 'move'
@@ -1058,6 +1060,8 @@ async function renderLibraryBrowser() {
   } finally {
     libraryLoading.hidden = true
     libraryBrowser.hidden = false
+    // Force a layout pass — Tizen sometimes keeps a just-unhidden UL blank until reflow.
+    void libraryBrowser.offsetHeight
   }
 }
 
@@ -1072,18 +1076,43 @@ function focusLibraryBrowserContents() {
   focusTvEl(libraryNewFolderBtn)
 }
 
+function afterLayout(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
 async function openLibraryModal() {
   hideFolderForm()
   hideSyncPanel()
   libraryModal.hidden = false
+  // Show spinner before heal/list — on TV the first IndexedDB pass can take a while.
+  libraryLoading.hidden = false
+  libraryBrowser.hidden = true
+  libraryEmpty.hidden = true
+  // Snap after layout: measuring while still display:none parks the card off-screen on Tizen.
+  await afterLayout()
   libraryDrag.snap()
   try {
+    await ensureLibraryReady()
     await healLibraryFolders()
   } catch (error) {
     console.error(error)
   }
   await refreshLibraryButton()
   await renderLibraryBrowser()
+  // Cold IDB / paint glitch: count says songs exist but the list stayed empty — retry once.
+  if (libraryBrowser.childElementCount === 0) {
+    try {
+      const count = await countLibrarySongs()
+      if (count > 0) {
+        await afterLayout()
+        await renderLibraryBrowser()
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   if (!isSmartTvUi()) {
     void restoreSyncLink().then(renderSyncStatus).catch(() => undefined)
   } else {
@@ -2915,7 +2944,7 @@ syncSeekControls()
 syncUi()
 registerRemote()
 void refreshLinkServer()
-void refreshLibraryButton()
+void ensureLibraryReady().then(() => refreshLibraryButton())
 
 /** Pull a playable URL out of Android share text (YouTube/Spotify often add a caption). */
 function extractSharedUrl(text: string): string | null {

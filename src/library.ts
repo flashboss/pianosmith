@@ -156,6 +156,44 @@ async function withDb<T>(fn: (db: IDBDatabase) => Promise<T>): Promise<T> {
   }
 }
 
+/** Walk songs one row at a time and keep only metadata (no audio/notes buffers). */
+function readSongMetas(store: IDBObjectStore): Promise<LibrarySongMeta[]> {
+  return new Promise((resolve, reject) => {
+    const rows: LibrarySongMeta[] = []
+    const request = store.openCursor()
+    request.onerror = () => reject(request.error || new Error(t('idbOpFailed')))
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) {
+        resolve(rows)
+        return
+      }
+      rows.push(toMeta(cursor.value as LibrarySong))
+      cursor.continue()
+    }
+  })
+}
+
+let libraryReady: Promise<void> | null = null
+
+/** Warm IndexedDB on Tizen/WebView before the first library UI open. */
+export function ensureLibraryReady(): Promise<void> {
+  if (!libraryReady) {
+    libraryReady = withDb(async (db) => {
+      const tx = db.transaction([SONGS, FOLDERS], 'readonly')
+      await Promise.all([
+        requestToPromise(tx.objectStore(SONGS).count()),
+        requestToPromise(tx.objectStore(FOLDERS).count()),
+      ])
+      await txDone(tx)
+    }).then(
+      () => undefined,
+      () => undefined,
+    )
+  }
+  return libraryReady
+}
+
 export async function countLibrarySongs(): Promise<number> {
   return withDb(async (db) => {
     const tx = db.transaction(SONGS, 'readonly')
@@ -168,24 +206,64 @@ export async function countLibrarySongs(): Promise<number> {
 export async function listLibrarySongs(folderId = ROOT_FOLDER_ID): Promise<LibrarySongMeta[]> {
   return withDb(async (db) => {
     const tx = db.transaction(SONGS, 'readonly')
-    const store = tx.objectStore(SONGS)
-    const rows = (await requestToPromise(store.getAll())) as LibrarySong[]
+    const rows = await readSongMetas(tx.objectStore(SONGS))
     await txDone(tx)
     return rows
-      .map(toMeta)
       .filter((row) => (row.folderId || ROOT_FOLDER_ID) === folderId)
       .sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, 'it'))
+  })
+}
+
+/** Metadata for every song — safe for browser/heal without loading audio into RAM. */
+export async function listAllLibrarySongMetas(): Promise<LibrarySongMeta[]> {
+  return withDb(async (db) => {
+    const tx = db.transaction(SONGS, 'readonly')
+    const rows = await readSongMetas(tx.objectStore(SONGS))
+    await txDone(tx)
+    return rows
+      .map((row) => ({ ...row, folderId: row.folderId || ROOT_FOLDER_ID }))
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, localeTag()))
   })
 }
 
 export async function listAllLibrarySongs(): Promise<LibrarySong[]> {
   return withDb(async (db) => {
     const tx = db.transaction(SONGS, 'readonly')
-    const rows = (await requestToPromise(tx.objectStore(SONGS).getAll())) as LibrarySong[]
+    const store = tx.objectStore(SONGS)
+    // Prefer a cursor so Tizen does not allocate one giant getAll() of every audio buffer.
+    const rows: LibrarySong[] = await new Promise((resolve, reject) => {
+      const out: LibrarySong[] = []
+      const request = store.openCursor()
+      request.onerror = () => reject(request.error || new Error(t('idbOpFailed')))
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) {
+          resolve(out)
+          return
+        }
+        const row = cursor.value as LibrarySong
+        out.push({ ...row, folderId: row.folderId || ROOT_FOLDER_ID })
+        cursor.continue()
+      }
+    })
     await txDone(tx)
-    return rows
-      .map((row) => ({ ...row, folderId: row.folderId || ROOT_FOLDER_ID }))
-      .sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, localeTag()))
+    return rows.sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, localeTag()))
+  })
+}
+
+/** Patch folderId without rewriting notes/audio when heal only moves a song. */
+export async function updateLibrarySongFolder(id: string, folderId: string): Promise<void> {
+  await withDb(async (db) => {
+    const tx = db.transaction(SONGS, 'readwrite')
+    const store = tx.objectStore(SONGS)
+    const row = (await requestToPromise(store.get(id))) as LibrarySong | undefined
+    if (!row) {
+      await txDone(tx)
+      return
+    }
+    row.folderId = folderId || ROOT_FOLDER_ID
+    store.put(row)
+    await txDone(tx)
   })
 }
 

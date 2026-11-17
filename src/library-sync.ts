@@ -5,10 +5,12 @@ import {
   deleteFolderRecord,
   getSyncDirectoryHandle,
   listAllFolders,
+  listAllLibrarySongMetas,
   listAllLibrarySongs,
   putLibrarySong,
   removeLibrarySong,
   setSyncDirectoryHandle,
+  updateLibrarySongFolder,
   upsertFolder,
   type LibraryFolder,
   type LibrarySong,
@@ -474,14 +476,16 @@ export async function healLibraryFolders(): Promise<{
   duplicates: number
 }> {
   const localFolders = await listAllFolders()
-  const localSongs = await listAllLibrarySongs()
+  // Metadata-only: loading every audio buffer on open freezes / blanks the TV library.
+  const localSongs = await listAllLibrarySongMetas()
   const prefer = new Set(localFolders.map((folder) => folder.id))
   const { folders: coalesced, remap } = coalesceFolders(localFolders, prefer)
   for (const folder of coalesced) await upsertFolder(folder)
   for (const song of localSongs) {
     const next = resolveFolderId(song.folderId || ROOT_FOLDER_ID, remap)
     if (next !== (song.folderId || ROOT_FOLDER_ID)) {
-      await putLibrarySong({ ...song, folderId: next })
+      await updateLibrarySongFolder(song.id, next)
+      song.folderId = next
     }
   }
   await applyFolderRemap(remap, [])
@@ -489,19 +493,19 @@ export async function healLibraryFolders(): Promise<{
   const folderIds = new Set(coalesced.map((folder) => folder.id))
   folderIds.add(ROOT_FOLDER_ID)
   let orphans = 0
-  const afterRemap = await listAllLibrarySongs()
-  for (const song of afterRemap) {
+  for (const song of localSongs) {
     const folderId = song.folderId || ROOT_FOLDER_ID
     if (folderId && !folderIds.has(folderId)) {
       // Folder was removed in a prior merge — surface the song at root so it is reachable.
-      await putLibrarySong({ ...song, folderId: ROOT_FOLDER_ID })
+      await updateLibrarySongFolder(song.id, ROOT_FOLDER_ID)
+      song.folderId = ROOT_FOLDER_ID
       orphans += 1
     }
   }
 
   let duplicates = 0
-  const byKey = new Map<string, LibrarySong[]>()
-  for (const song of await listAllLibrarySongs()) {
+  const byKey = new Map<string, typeof localSongs>()
+  for (const song of localSongs) {
     const key = songKey(song)
     const list = byKey.get(key) || []
     list.push(song)
