@@ -1818,9 +1818,13 @@ midiBridgeHostBtn.addEventListener('click', () => {
       midiBridge.setHandlers(
         (midi, on) => ensurePlayer().midiNote(midi, on),
         (status) => {
-          if (status === 'error') midiBridgeStatusKey = 'midiBridgeError'
-          else if (status === 'ready') midiBridgeStatusKey = 'midiBridgeReady'
+          if (status === 'error') {
+            midiBridgeStatusKey = 'midiBridgeError'
+            // Keep host mode awake until the user stops; transient socket blips
+            // must not drop the display into screensaver.
+          } else if (status === 'ready') midiBridgeStatusKey = 'midiBridgeReady'
           syncPracticeUi()
+          syncTvScreenSaver()
         },
       )
       midiBridge.listen(code)
@@ -1828,10 +1832,12 @@ midiBridgeHostBtn.addEventListener('click', () => {
       midiBridgeCodeInput.value = code
       localStorage.setItem('pianosmith.midiRoom', code)
       syncPracticeUi()
+      syncTvScreenSaver()
     } catch {
       midiBridgeMode = 'off'
       midiBridgeStatusKey = 'midiBridgeError'
       syncPracticeUi()
+      syncTvScreenSaver()
     }
   })()
 })
@@ -1861,6 +1867,7 @@ midiBridgeStopBtn.addEventListener('click', () => {
   midiBridgeMode = 'off'
   midiBridgeStatusKey = 'midiBridgeIdle'
   syncPracticeUi()
+  syncTvScreenSaver()
 })
 
 loopBtn.addEventListener('click', () => {
@@ -2055,7 +2062,10 @@ type TizenPower = {
   setScreenState?: (state: string) => void
 }
 
-/** Samsung Tizen: keep the panel awake while a song is playing. */
+/**
+ * Keep the panel awake while a song is playing, or while this device is the
+ * MIDI bridge display (server). Screensaver/standby would freeze the client.
+ */
 let tvScreenSaverTimer = 0
 let tvScreenSaverPlaying = false
 let tvKeepAwakeLastMs = 0
@@ -2063,6 +2073,38 @@ let tvKeepAwakeVideo: HTMLVideoElement | null = null
 let tvKeepAwakeCanvas: HTMLCanvasElement | null = null
 let tvKeepAwakeCtx: CanvasRenderingContext2D | null = null
 let tvKeepAwakeRaf = 0
+let screenWakeLock: WakeLockSentinel | null = null
+
+function shouldKeepScreenAwake(): boolean {
+  return Boolean(player?.playing) || midiBridgeMode === 'tv'
+}
+
+async function setBrowserScreenWakeLock(awake: boolean) {
+  if (!awake) {
+    const lock = screenWakeLock
+    screenWakeLock = null
+    try {
+      await lock?.release()
+    } catch {
+      /* ignore */
+    }
+    return
+  }
+  const nav = navigator as Navigator & {
+    wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinel> }
+  }
+  if (!nav.wakeLock || document.visibilityState !== 'visible') return
+  try {
+    if (screenWakeLock) return
+    const lock = await nav.wakeLock.request('screen')
+    screenWakeLock = lock
+    lock.addEventListener('release', () => {
+      if (screenWakeLock === lock) screenWakeLock = null
+    })
+  } catch {
+    /* denied / unsupported */
+  }
+}
 
 type TizenWindow = Window & {
   webapis?: { appcommon?: SamsungAppCommon }
@@ -2220,10 +2262,11 @@ function setTvScreenAwake(awake: boolean) {
 
   setTvKeepAwakeMedia(awake)
   setTvKeepAwakeMotion(awake)
+  void setBrowserScreenWakeLock(awake)
 }
 
 function syncTvScreenSaver() {
-  const keepAwake = Boolean(player?.playing)
+  const keepAwake = shouldKeepScreenAwake()
   if (keepAwake === tvScreenSaverPlaying && (keepAwake ? tvScreenSaverTimer !== 0 : tvScreenSaverTimer === 0)) {
     return
   }
@@ -2234,19 +2277,23 @@ function syncTvScreenSaver() {
     tvScreenSaverTimer = 0
   }
   if (keepAwake) {
-    // Re-assert AppCommon periodically; canvas/video keep running independently.
+    // Re-assert AppCommon / wake lock periodically; canvas/video keep running independently.
     tvScreenSaverTimer = window.setInterval(() => {
       const win = tizenRoot()
       win.__pianosmithKeepAwake = true
       win.__pianosmithScreenOff?.()
       if (tvKeepAwakeVideo?.paused) void setTvKeepAwakeMedia(true)
+      if (!screenWakeLock) void setBrowserScreenWakeLock(true)
     }, 2000)
   }
 }
 
 /** Called from the render loop so keep-awake does not depend only on player events. */
 function tickTvKeepAwake(now = performance.now()) {
-  if (!player?.playing) return
+  if (!shouldKeepScreenAwake()) {
+    if (tvScreenSaverPlaying) syncTvScreenSaver()
+    return
+  }
   if (now - tvKeepAwakeLastMs < 2000) return
   tvKeepAwakeLastMs = now
   if (!tvScreenSaverPlaying) syncTvScreenSaver()
@@ -2256,6 +2303,7 @@ function tickTvKeepAwake(now = performance.now()) {
     win.__pianosmithScreenOff?.()
     if (tvKeepAwakeVideo?.paused) void setTvKeepAwakeMedia(true)
     if (!tvKeepAwakeRaf) setTvKeepAwakeMotion(true)
+    if (!screenWakeLock) void setBrowserScreenWakeLock(true)
   }
 }
 
@@ -2963,7 +3011,7 @@ function loop(now: number) {
 requestAnimationFrame(loop)
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && player?.playing) setTvScreenAwake(true)
+  if (document.visibilityState === 'visible' && shouldKeepScreenAwake()) setTvScreenAwake(true)
 })
 
 if (import.meta.env.DEV) {
