@@ -2389,22 +2389,27 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
   }
 
   // Groups with side-by-side (or stacked) controls: prefer DOM order so the TV
-  // remote can reach every sibling (e.g. bridge code → Send).
+  // remote can reach every sibling (e.g. Opzioni ↔ Nuovo, bridge code → Send).
   if (dx !== 0 || dy !== 0) {
     const row = current.closest(
-      '.library-item, .settings-keys, .library-sync-actions, .library-sync-bridge-row',
+      '.library-item, .settings-keys, .library-sync-actions, .library-sync-bridge-row, #topbar > .row',
     )
     if (row) {
-      const rowItems = items.filter((node) => row.contains(node))
-      const rowIndex = rowItems.indexOf(current)
-      if (rowIndex >= 0) {
-        const step = dx !== 0 ? dx : dy
-        const sibling = rowItems[rowIndex + step]
-        if (sibling) {
-          focusTvEl(sibling)
-          return
+      // Top bar / settings key rows are horizontal: Left/Right follow DOM order
+      // even when flex-wrap stacks Opzioni above Nuovo (spatial nav would skip).
+      const horizontalOnly = row.matches('#topbar > .row, .settings-keys')
+      if (!horizontalOnly || dx !== 0) {
+        const rowItems = items.filter((node) => row.contains(node))
+        const rowIndex = rowItems.indexOf(current)
+        if (rowIndex >= 0) {
+          const step = dx !== 0 ? dx : dy
+          const sibling = rowItems[rowIndex + step]
+          if (sibling) {
+            focusTvEl(sibling)
+            return
+          }
+          // No sibling in that direction inside the row — fall through to spatial nav.
         }
-        // No sibling in that direction inside the row — fall through to spatial nav.
       }
     }
   }
