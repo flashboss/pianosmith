@@ -1601,7 +1601,10 @@ function openSettingsModal() {
   settingsOpenBtn.setAttribute('aria-expanded', 'true')
   settingsDrag.snap()
   poke()
-  queueMicrotask(ensureTvFocus)
+  queueMicrotask(() => {
+    if (isSmartTvUi()) focusTvEl(settingsCloseBtn)
+    else ensureTvFocus()
+  })
 }
 
 function closeSettingsModal() {
@@ -2347,7 +2350,16 @@ function tvFocusables(): HTMLElement[] {
   else if (!statusEl.hidden) roots.push(statusEl)
   else if (!gate.hidden) roots.push(gate)
   else if (!topbar.hidden) roots.push(topbar)
-  if (!centerPlay.hidden && exitModal.hidden) roots.push(centerPlay)
+  // Never mix the big center Play with an open dialog — it steals D-pad Up from ×.
+  if (
+    !centerPlay.hidden &&
+    exitModal.hidden &&
+    libraryModal.hidden &&
+    settingsModal.hidden &&
+    gate.hidden
+  ) {
+    roots.push(centerPlay)
+  }
 
   const nodes = roots.flatMap((root) =>
     [...root.querySelectorAll<HTMLElement>('button, a[href], input, summary, select, [tabindex]:not([tabindex="-1"])')],
@@ -2392,12 +2404,13 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
   // remote can reach every sibling (e.g. Opzioni ↔ Nuovo, bridge code → Send).
   if (dx !== 0 || dy !== 0) {
     const row = current.closest(
-      '.library-item, .settings-keys, .library-sync-actions, .library-sync-bridge-row, #topbar > .row',
+      '.library-item, .settings-keys, .settings-grid, .library-toolbar, .library-sync-actions, .library-sync-bridge-row, #topbar > .row',
     )
     if (row) {
-      // Top bar / settings key rows are horizontal: Left/Right follow DOM order
-      // even when flex-wrap stacks Opzioni above Nuovo (spatial nav would skip).
-      const horizontalOnly = row.matches('#topbar > .row, .settings-keys')
+      // Horizontal strips: Left/Right follow DOM order even when flex/grid wraps.
+      const horizontalOnly = row.matches(
+        '#topbar > .row, .settings-keys, .settings-grid, .library-toolbar',
+      )
       if (!horizontalOnly || dx !== 0) {
         const rowItems = items.filter((node) => row.contains(node))
         const rowIndex = rowItems.indexOf(current)
@@ -2411,6 +2424,34 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
           // No sibling in that direction inside the row — fall through to spatial nav.
         }
       }
+    }
+  }
+
+  const overlayClose = items.find(
+    (node) =>
+      node.id === 'settings-close' ||
+      node.id === 'library-close' ||
+      node.getAttribute('data-exit') === 'close',
+  )
+
+  // Modal × is top-right; spatial Up from the left column often misses it.
+  if (dy < 0 && overlayClose && current !== overlayClose) {
+    const curTop = current.getBoundingClientRect().top
+    const hasAbove = items.some((item) => {
+      if (item === current || item === overlayClose) return false
+      return item.getBoundingClientRect().bottom <= curTop + 8
+    })
+    if (!hasAbove) {
+      focusTvEl(overlayClose)
+      return
+    }
+  }
+  if (dy > 0 && overlayClose && current === overlayClose) {
+    const head = overlayClose.closest('.modal-head')
+    const below = items.find((item) => item !== overlayClose && !(head && head.contains(item)))
+    if (below) {
+      focusTvEl(below)
+      return
     }
   }
 
@@ -2433,7 +2474,10 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
     if (dy !== 0 && Math.abs(oy) < 4) continue
     const primary = dx !== 0 ? Math.abs(ox) : Math.abs(oy)
     const secondary = dx !== 0 ? Math.abs(oy) : Math.abs(ox)
-    const score = primary * 1000 + secondary
+    // Prefer the dialog close control when moving up toward the header.
+    const closeBonus =
+      dy < 0 && overlayClose && item === overlayClose ? -80_000 : 0
+    const score = primary * 1000 + secondary + closeBonus
     if (score < bestScore) {
       bestScore = score
       best = item
@@ -2444,6 +2488,8 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
   else if (dx !== 0) {
     const index = items.indexOf(current)
     focusTvEl(items[(index + dx + items.length) % items.length])
+  } else if (dy < 0 && overlayClose && current !== overlayClose) {
+    focusTvEl(overlayClose)
   }
 }
 
