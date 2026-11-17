@@ -1868,9 +1868,12 @@ midiBridgeHostBtn.addEventListener('click', () => {
 })
 
 midiBridgeJoinBtn.addEventListener('click', () => {
+  const code = midiBridgeCodeInput.value.trim().toUpperCase()
+  if (code.length < 4) return
+  // Wake lock + silent video must start in this tap — awaits drop Android user activation.
+  midiBridgeMode = 'device'
+  armScreenWakeFromGesture()
   void (async () => {
-    const code = midiBridgeCodeInput.value.trim().toUpperCase()
-    if (code.length < 4) return
     midiBridge.setHandlers(null, (status) => {
       if (status === 'error') {
         midiBridgeStatusKey = 'midiBridgeError'
@@ -1878,7 +1881,6 @@ midiBridgeJoinBtn.addEventListener('click', () => {
       }
     })
     midiBridge.joinRoom(code)
-    midiBridgeMode = 'device'
     midiInput.onNotes(onMidiActivity)
     const midiStatus = await midiInput.start()
     if (midiStatus === 'unsupported' || midiStatus === 'denied') {
@@ -1888,6 +1890,7 @@ midiBridgeJoinBtn.addEventListener('click', () => {
     }
     localStorage.setItem('pianosmith.midiRoom', code)
     syncPracticeUi()
+    syncTvScreenSaver()
   })()
 })
 
@@ -2094,8 +2097,9 @@ type TizenPower = {
 }
 
 /**
- * Keep the panel awake while a song is playing, or while this device is the
- * MIDI bridge host (SSE listener). Standby drops the stream and freezes the keyboard.
+ * Keep the panel awake while playing, or while the MIDI bridge is active on
+ * either side: host (TV SSE) or device (phone + keyboard). Android lock-screen
+ * otherwise suspends the tab after ~15 minutes and drops the bridge.
  */
 let tvScreenSaverTimer = 0
 let tvScreenSaverPlaying = false
@@ -2107,7 +2111,17 @@ let tvKeepAwakeRaf = 0
 let screenWakeLock: WakeLockSentinel | null = null
 
 function shouldKeepScreenAwake(): boolean {
-  return Boolean(player?.playing) || midiBridgeMode === 'tv'
+  return Boolean(player?.playing) || midiBridgeMode === 'tv' || midiBridgeMode === 'device'
+}
+
+function armScreenWakeFromGesture() {
+  tvScreenSaverPlaying = false
+  if (tvScreenSaverTimer) {
+    window.clearInterval(tvScreenSaverTimer)
+    tvScreenSaverTimer = 0
+  }
+  setTvScreenAwake(true)
+  syncTvScreenSaver()
 }
 
 async function setBrowserScreenWakeLock(awake: boolean) {
@@ -2126,14 +2140,24 @@ async function setBrowserScreenWakeLock(awake: boolean) {
   }
   if (!nav.wakeLock || document.visibilityState !== 'visible') return
   try {
-    if (screenWakeLock) return
+    if (screenWakeLock) {
+      try {
+        await screenWakeLock.release()
+      } catch {
+        /* ignore */
+      }
+      screenWakeLock = null
+    }
     const lock = await nav.wakeLock.request('screen')
     screenWakeLock = lock
     lock.addEventListener('release', () => {
       if (screenWakeLock === lock) screenWakeLock = null
+      if (shouldKeepScreenAwake() && document.visibilityState === 'visible') {
+        void setBrowserScreenWakeLock(true)
+      }
     })
   } catch {
-    /* denied / unsupported */
+    /* denied / unsupported — silent video fallback still runs */
   }
 }
 
@@ -2156,9 +2180,11 @@ function tizenRoot(): TizenWindow {
   return local
 }
 
-/** Invisible muted MP4 — media activity for Tizen; pixels stay off-screen so no purple tile. */
+/**
+ * Invisible muted MP4 — prevents Android lock screen (and helps Tizen) while the
+ * MIDI phone/keyboard side must stay awake. Pixels stay off-screen.
+ */
 function setTvKeepAwakeMedia(awake: boolean) {
-  if (!isSmartTvUi()) return
   if (!awake) {
     if (tvKeepAwakeVideo) {
       try {
@@ -2174,11 +2200,13 @@ function setTvKeepAwakeMedia(awake: boolean) {
     const video = document.createElement('video')
     video.setAttribute('playsinline', '')
     video.setAttribute('webkit-playsinline', '')
+    video.setAttribute('muted', '')
     video.muted = true
     video.defaultMuted = true
     video.volume = 0
     video.loop = true
     video.autoplay = true
+    video.playsInline = true
     video.preload = 'auto'
     video.setAttribute('aria-hidden', 'true')
     video.src = new URL(`${import.meta.env.BASE_URL}tv-keep-awake.mp4`, window.location.href).toString()
@@ -3044,6 +3072,17 @@ requestAnimationFrame(loop)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && shouldKeepScreenAwake()) setTvScreenAwake(true)
 })
+
+// Android may drop the wake lock without hiding the tab; any tap while bridged re-arms it.
+document.addEventListener(
+  'pointerdown',
+  () => {
+    if (!shouldKeepScreenAwake()) return
+    setTvKeepAwakeMedia(true)
+    void setBrowserScreenWakeLock(true)
+  },
+  { passive: true },
+)
 
 if (import.meta.env.DEV) {
   Object.assign(window, {
