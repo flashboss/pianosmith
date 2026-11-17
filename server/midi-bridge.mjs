@@ -1,6 +1,7 @@
 /** In-memory MIDI relay: phone POSTs notes, TV listens via SSE. */
 
 const ROOM_TTL_MS = 45 * 60 * 1000
+const HEARTBEAT_MS = 10_000
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 /** @type {Map<string, { tv: Set<import('node:http').ServerResponse>, events: object[], updated: number }>} */
@@ -36,7 +37,9 @@ function roomOf(code) {
 function pruneRooms() {
   const now = Date.now()
   for (const [key, room] of rooms) {
-    if (now - room.updated > ROOM_TTL_MS && room.tv.size === 0) rooms.delete(key)
+    // Keep rooms with live SSE listeners even if notes are idle.
+    if (room.tv.size > 0) continue
+    if (now - room.updated > ROOM_TTL_MS) rooms.delete(key)
   }
 }
 
@@ -89,29 +92,50 @@ export async function handleMidiBridge(req, res, url, sendJson, readBody) {
       Connection: 'keep-alive',
       'Access-Control-Allow-Origin': '*',
     })
+    // Disable socket timeout so the display can stay listening for hours.
+    req.socket?.setTimeout?.(0)
     res.write(': ok\n\n')
     sseWrite(res, 'hello', { room: key, role: 'tv' })
     room.tv.add(res)
-    req.on('close', () => {
-      room.tv.delete(res)
-    })
+    room.updated = Date.now()
+
     const heartbeat = setInterval(() => {
       if (res.writableEnded) {
         clearInterval(heartbeat)
         return
       }
       try {
+        room.updated = Date.now()
+        // Comment + named event: proxies keep the connection; clients can watch liveness.
         res.write(': ping\n\n')
+        sseWrite(res, 'ping', { at: Date.now(), listeners: room.tv.size })
       } catch {
         clearInterval(heartbeat)
         room.tv.delete(res)
       }
-    }, 15000)
-    req.on('close', () => clearInterval(heartbeat))
+    }, HEARTBEAT_MS)
+
+    const cleanup = () => {
+      clearInterval(heartbeat)
+      room.tv.delete(res)
+      room.updated = Date.now()
+    }
+    req.on('close', cleanup)
+    res.on('close', cleanup)
     return true
   }
 
   if (req.method === 'POST' && !action) {
+    // Touch room so TTL stays alive while the keyboard is sending.
+    room.updated = Date.now()
+    if (room.tv.size === 0) {
+      sendJson(res, 503, {
+        ok: false,
+        message: 'Nessuno schermo in ascolto (ponte MIDI addormentato o disconnesso)',
+        listeners: 0,
+      })
+      return true
+    }
     const raw = await readBody(req)
     let body = {}
     try {
@@ -131,12 +155,20 @@ export async function handleMidiBridge(req, res, url, sendJson, readBody) {
     room.events.push(payload)
     if (room.events.length > 64) room.events.splice(0, room.events.length - 64)
     broadcast(room, 'midi', payload)
-    sendJson(res, 200, { ok: true })
+    sendJson(res, 200, { ok: true, listeners: room.tv.size })
     return true
   }
 
   if (req.method === 'GET' && !action) {
-    sendJson(res, 200, { room: key, listeners: room.tv.size })
+    sendJson(res, 200, { room: key, listeners: room.tv.size, updated: room.updated })
+    return true
+  }
+
+  // Lightweight keepalive used by display/keyboard clients so hosted Node (Railway)
+  // does not idle-sleep while a bridge session is open.
+  if (req.method === 'POST' && action === 'keepalive') {
+    room.updated = Date.now()
+    sendJson(res, 200, { ok: true, room: key, listeners: room.tv.size })
     return true
   }
 
