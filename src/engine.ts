@@ -59,7 +59,9 @@ export const KEYBOARD_MIN_KEYS = 25
 export const KEYBOARD_MAX_KEYS = KEYBOARD_MAX_MIDI - KEYBOARD_MIN_MIDI + 1
 export const KEYBOARD_DEFAULT_KEYS = 85
 
-const BLACK_KEY_HALF = 0.28 // half of black key width (0.56 × whiteW)
+/** Black key width / height as a fraction of a white key (real piano ≈ ⅔). */
+const BLACK_KEY_RATIO = 2 / 3
+const BLACK_KEY_HALF = BLACK_KEY_RATIO / 2
 
 function cameraBounds(loMidi: number, hiMidi: number): { lo: number; hi: number } {
   let lo: number
@@ -379,6 +381,27 @@ function traceRoundRect(
   ctx.closePath()
 }
 
+/**
+ * Vertical depth of the tip bevel. Total black-key length is still
+ * `whiteH * BLACK_KEY_RATIO` — body + this bevel = that full ⅔.
+ */
+function blackKeyTipBevel(totalH: number, w: number): number {
+  // Tip bevel height — between the too-flat and too-tall extremes.
+  return Math.min(totalH * 0.22, w * 0.45, 14)
+}
+
+/** Rectangular black-key outline; player-facing tip is a straight horizontal edge. */
+function traceBlackKey(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  ctx.beginPath()
+  ctx.rect(x, y, w, h)
+}
+
 const SKIN_DARK: [number, number, number] = [168, 108, 78]
 const SKIN_MID: [number, number, number] = [214, 158, 122]
 const SKIN_LIGHT: [number, number, number] = [236, 196, 164]
@@ -418,10 +441,10 @@ function fillCapsule(
 
 /** Tip depth on the key (0 thumb … 4 pinky). Negative = deeper into the keyboard. */
 const FINGER_TIP_DEPTH = [0.1, 0.02, -0.05, 0.01, 0.08] as const
-/** Dome / arch strength — middle highest, thumb flatter, pinky lower. */
-const FINGER_ARCH = [0.3, 1.0, 1.18, 0.92, 0.5] as const
+/** Dome / arch strength — tamburello curl; middle highest, thumb flatter. */
+const FINGER_ARCH = [0.45, 1.2, 1.4, 1.15, 0.7] as const
 /** Knuckle row offset in palm units (negative = knuckles closer to tips = taller arch). */
-const FINGER_KNUCKLE_LIFT = [0.28, -0.1, -0.24, -0.08, 0.1] as const
+const FINGER_KNUCKLE_LIFT = [0.18, -0.28, -0.42, -0.26, 0] as const
 /**
  * Hard max knuckle→tip length in palm `unit`s (thumb … pinky).
  * Rough adult proportions — fingers never rubber-band past this; the palm moves instead.
@@ -429,6 +452,11 @@ const FINGER_KNUCKLE_LIFT = [0.28, -0.1, -0.24, -0.08, 0.1] as const
 const FINGER_MAX_LEN = [3.55, 4.55, 5.05, 4.8, 3.85] as const
 /** Comfortable resting knuckle→tip length (middle reference) before any reach. */
 const FINGER_REST_LEN = 4.35
+/**
+ * Extra vertical hand scale after the keyboard band was shortened (tips sit lower;
+ * palms may hang below the canvas so fingers keep full length).
+ */
+const HAND_LEN_SCALE = 1.35
 
 function fingerChain(
   baseX: number,
@@ -446,17 +474,18 @@ function fingerChain(
   const dx = tipX - baseX
   const dy = tipY - baseY
   const len = Math.hypot(dx, dy) || 1
-  // Hammer curl bends toward the palm (down the screen), never up toward the notes.
-  const bend = Math.min(isThumb ? 10 : 30, len * (0.045 + 0.09 * arch)) * arch * (1 - pressed * 0.45)
-  const peak = thickness * (0.55 + arch * 1.6)
+  // Tamburello curl: joints dome toward the palm (down the screen).
+  const pressFlat = 1 - pressed * 0.28
+  const bend = Math.min(isThumb ? 16 : 48, len * (0.07 + 0.14 * arch)) * arch * pressFlat
+  const peak = thickness * (0.85 + arch * 2.15) * pressFlat
   // No outward splay on thumb/pinky — joints stay on the base→tip line.
   const lateral = isOuter ? 0 : side * thickness * (0.03 + arch * 0.02)
-  const knukleX = baseX + dx * 0.3 + lateral * 0.08
-  const knukleY = baseY + dy * 0.28 + bend * 0.35 + peak * 0.18
-  const midX = baseX + dx * 0.62 + lateral * 0.2
-  const midY = baseY + dy * 0.6 + bend + peak * 0.5
-  const tipRadius = isThumb ? 0.7 : 0.55
-  const midRadius = isThumb ? 0.88 : 0.72 + arch * 0.05
+  const knukleX = baseX + dx * 0.28 + lateral * 0.08
+  const knukleY = baseY + dy * 0.24 + bend * 0.4 + peak * 0.22
+  const midX = baseX + dx * 0.62 + lateral * 0.18
+  const midY = baseY + dy * 0.55 + bend * 1.05 + peak * 0.55
+  const tipRadius = isThumb ? 0.72 : 0.58
+  const midRadius = isThumb ? 0.9 : 0.74 + arch * 0.06
   const baseRadius = isThumb ? 1.02 : 0.88 + arch * 0.06
   const unit = thickness * (0.9 + arch * 0.06)
   return [
@@ -493,7 +522,8 @@ export class Visualizer {
   setViewport(w: number, h: number) {
     this.w = w
     this.h = h
-    this.keyboardTop = h * 0.72
+    // Shorter keyboard band so black keys (⅔ white) read clearly with rounded tips.
+    this.keyboardTop = h * 0.8
   }
 
   setShowNames(show: boolean) {
@@ -1005,13 +1035,13 @@ export class Visualizer {
   private fingerY(index: number, pressed: number, onBlack = false): number {
     const whiteH = this.h - this.keyboardTop
     const depth = FINGER_TIP_DEPTH[index] ?? 0
-    // Blacks are only slightly further in; reach comes from hand lift, not longer fingers.
+    // Sit toward the front of the key after the shorter keyboard band.
     const blackForward = onBlack ? -whiteH * 0.035 : 0
     return (
       this.keyboardTop +
-      whiteH * (0.58 + depth) +
+      whiteH * (0.78 + depth) +
       blackForward +
-      pressed * Math.min(18, whiteH * 0.05)
+      pressed * Math.min(14, whiteH * 0.045)
     )
   }
 
@@ -1044,7 +1074,7 @@ export class Visualizer {
         height = 8
       }
       const black = isBlack(note.midi)
-      const width = Math.max(4, layout.whiteW * (black ? 0.4 : 0.58))
+      const width = Math.max(4, layout.whiteW * (black ? BLACK_KEY_RATIO * 0.58 : 0.58))
       const x = layout.centerX(note.midi) - width / 2
       if (x > this.w + 20 || x + width < -20) continue
       const radius = Math.min(width / 2, 10)
@@ -1086,7 +1116,8 @@ export class Visualizer {
     const ctx = this.ctx
     const top = this.keyboardTop
     const whiteH = this.h - top
-    const blackH = whiteH * 0.62
+    // Full black length including tip bevel (body + smussatura = ⅔ of a white key).
+    const blackTotalH = whiteH * BLACK_KEY_RATIO
     ctx.fillStyle = '#140705'
     ctx.fillRect(0, top - 4, this.w, whiteH + 8)
 
@@ -1101,7 +1132,7 @@ export class Visualizer {
       const keyW = right - left
       if (keyW <= 0) continue
       const pressed = active.has(midi)
-      const depress = pressed ? 7 : 0
+      const depress = pressed ? Math.min(5, whiteH * 0.06) : 0
       const y = top + depress
       const height = whiteH - depress
       const gradient = ctx.createLinearGradient(left, y, left, y + height)
@@ -1123,7 +1154,7 @@ export class Visualizer {
 
     for (let midi = this.keyLo; midi <= this.keyHi; midi++) {
       if (!isBlack(midi)) continue
-      const width = layout.whiteW * 0.56
+      const width = layout.whiteW * BLACK_KEY_RATIO
       let x = layout.centerX(midi) - width / 2
       let keyW = width
       if (x + keyW < 0 || x > this.w) continue
@@ -1134,21 +1165,88 @@ export class Visualizer {
       if (x + keyW > this.w) keyW = this.w - x
       if (keyW <= 0) continue
       const pressed = active.has(midi)
-      const depress = pressed ? 5 : 0
+      const depress = pressed ? Math.min(4, blackTotalH * 0.05) : 0
       const y = top + depress
-      const height = blackH - depress
-      traceRoundRect(ctx, x, y, keyW, height, Math.min(5, keyW / 3))
-      const gradient = ctx.createLinearGradient(x, y, x + keyW, y)
-      gradient.addColorStop(0, '#3a3a3a')
-      gradient.addColorStop(0.18, '#161616')
-      gradient.addColorStop(0.55, '#2c2c2c')
-      gradient.addColorStop(1, '#050505')
-      ctx.fillStyle = gradient
+      // Total length (body + tip bevel) stays ⅔ of a white key.
+      const totalH = blackTotalH - depress
+      const bevel = blackKeyTipBevel(totalH, keyW)
+      const bodyH = Math.max(1, totalH - bevel)
+      // Soft band + crisp hairline; keep thin but bright enough to read on OLED/TV.
+      const edgeFade = Math.max(2.5, Math.min(5, keyW * 0.1))
+      const edgeLine = Math.max(1.15, Math.min(1.75, keyW * 0.04))
+      const bodyBottom = y + bodyH
+      const tipY = y + totalH
+      // Horizontal inset of the inner bevel edge (not the same as vertical bevel depth).
+      const diagInset = Math.max(edgeFade, keyW * 0.14)
+
+      ctx.save()
+      traceBlackKey(ctx, x, y, keyW, totalH)
+      ctx.clip()
+
+      // Flat body — no wide gray wash across the key.
+      ctx.fillStyle = pressed ? '#1a1a1a' : '#0c0c0c'
+      ctx.fillRect(x, y, keyW, totalH)
+
+      // Thin gray edge highlights on both long sides (fade + hairline), full ⅔ length.
+      const leftEdge = ctx.createLinearGradient(x, y, x + edgeFade, y)
+      leftEdge.addColorStop(0, 'rgba(210,210,210,0.85)')
+      leftEdge.addColorStop(0.35, 'rgba(180,180,180,0.35)')
+      leftEdge.addColorStop(1, 'rgba(180,180,180,0)')
+      ctx.fillStyle = leftEdge
+      ctx.fillRect(x, y, edgeFade, totalH)
+
+      const rightEdge = ctx.createLinearGradient(x + keyW, y, x + keyW - edgeFade, y)
+      rightEdge.addColorStop(0, 'rgba(195,195,195,0.75)')
+      rightEdge.addColorStop(0.35, 'rgba(160,160,160,0.3)')
+      rightEdge.addColorStop(1, 'rgba(160,160,160,0)')
+      ctx.fillStyle = rightEdge
+      ctx.fillRect(x + keyW - edgeFade, y, edgeFade, totalH)
+
+      ctx.strokeStyle = 'rgba(220,220,220,0.9)'
+      ctx.lineWidth = edgeLine
+      ctx.lineCap = 'butt'
+      ctx.beginPath()
+      ctx.moveTo(x + edgeLine * 0.5, y + 1)
+      ctx.lineTo(x + edgeLine * 0.5, tipY - 1)
+      ctx.moveTo(x + keyW - edgeLine * 0.5, y + 1)
+      ctx.lineTo(x + keyW - edgeLine * 0.5, tipY - 1)
+      ctx.stroke()
+
+      // Final bevel segment of the ⅔ length: diagonals inside, straight tip closure.
+      const bevelGrad = ctx.createLinearGradient(x, bodyBottom, x, tipY)
+      bevelGrad.addColorStop(0, 'rgba(175,175,175,0.04)')
+      bevelGrad.addColorStop(0.55, 'rgba(185,185,185,0.12)')
+      bevelGrad.addColorStop(1, 'rgba(200,200,200,0.06)')
+      ctx.fillStyle = bevelGrad
+      ctx.beginPath()
+      ctx.moveTo(x + edgeLine, tipY)
+      ctx.lineTo(x + diagInset, bodyBottom)
+      ctx.lineTo(x + keyW - diagInset, bodyBottom)
+      ctx.lineTo(x + keyW - edgeLine, tipY)
+      ctx.closePath()
       ctx.fill()
-      ctx.fillStyle = 'rgba(255,255,255,0.16)'
-      ctx.fillRect(x + 2, y + 3, Math.max(1, keyW * 0.28), height * 0.42)
+
+      ctx.strokeStyle = 'rgba(185,185,185,0.28)'
+      ctx.lineWidth = Math.max(0.6, edgeLine * 0.45)
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(x + edgeLine * 0.5, tipY - edgeLine * 0.5)
+      ctx.lineTo(x + diagInset, bodyBottom)
+      ctx.lineTo(x + keyW - diagInset, bodyBottom)
+      ctx.lineTo(x + keyW - edgeLine * 0.5, tipY - edgeLine * 0.5)
+      ctx.stroke()
+
+      // Straight tip closure at the end of the full ⅔ length.
+      ctx.strokeStyle = 'rgba(185,185,185,0.32)'
+      ctx.beginPath()
+      ctx.moveTo(x + edgeLine * 0.5, tipY - edgeLine * 0.5)
+      ctx.lineTo(x + keyW - edgeLine * 0.5, tipY - edgeLine * 0.5)
+      ctx.stroke()
+
       const note = active.get(midi)
-      if (note) this.paintKey(x, y, keyW, height * 0.8, note)
+      if (note) this.paintKey(x, y, keyW, totalH * 0.75, note)
+      ctx.restore()
     }
   }
 
@@ -1285,9 +1383,10 @@ export class Visualizer {
     const tipCenter = (tipMin + tipMax) / 2
     const tipY = tips.reduce((sum, tip) => sum + tip.y, 0) / tips.length
     const thumbPull = this.thumbPalmPull(hand, whiteW)
-    // Resting finger length — never the old elastic 7× unit reach.
-    const restLen = unit * FINGER_REST_LEN
-    let palmY = Math.min(this.h - unit * 0.35, tipY + restLen) + thumbPull.y
+    // Resting finger length — scaled so the shorter keyboard doesn't squash the hands.
+    const restLen = unit * FINGER_REST_LEN * HAND_LEN_SCALE
+    let palmY = tipY + restLen + thumbPull.y
+    palmY = Math.min(palmY, this.h + unit * 3.2)
     let palmX = tipCenter * 0.55 + hand.palmX * 0.45 + side * unit * 0.04 + thumbPull.x
     const palmLean = side * 0.07 + thumbPull.lean
     const knuckleScale = 0.8
@@ -1315,7 +1414,7 @@ export class Visualizer {
       let shiftY = 0
       let count = 0
       for (let index = 0; index < 5; index++) {
-        const maxLen = unit * FINGER_MAX_LEN[index]
+        const maxLen = unit * FINGER_MAX_LEN[index] * HAND_LEN_SCALE
         const base = bases[index]
         const tip = tips[index]
         const dx = tip.x - base.x
@@ -1335,7 +1434,7 @@ export class Visualizer {
     const bases = knuckleBases(palmX, palmY)
     // Hard clamp: draw tips only within max finger length (palm already moved to reach).
     for (let index = 0; index < 5; index++) {
-      const maxLen = unit * FINGER_MAX_LEN[index]
+      const maxLen = unit * FINGER_MAX_LEN[index] * HAND_LEN_SCALE
       const base = bases[index]
       const tip = tips[index]
       const dx = tip.x - base.x
@@ -1444,6 +1543,17 @@ export class Visualizer {
     }
 
     const tip = chain[chain.length - 1]
+    const joint = chain[chain.length - 2] ?? tip
+    const jdx = tip.x - joint.x
+    const jdy = tip.y - joint.y
+    const jlen = Math.hypot(jdx, jdy) || 1
+    const ux = jdx / jlen
+    const uy = jdy / jlen
+    // Nail on the dorsal side (tamburello), not flat on the key.
+    const nailX = tip.x - ux * tip.r * 0.55 + side * tip.r * 0.05
+    const nailY = tip.y - uy * tip.r * 0.55
+    const nailAngle = Math.atan2(uy, ux) + Math.PI / 2
+
     const glow = Math.max(0.12, pressed * 0.55)
     const tipGlow = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, tip.r * 2.2)
     tipGlow.addColorStop(0, rgba(GLOW, glow))
@@ -1455,7 +1565,15 @@ export class Visualizer {
 
     ctx.fillStyle = rgba(SKIN_NAIL, 0.9)
     ctx.beginPath()
-    ctx.ellipse(tip.x, tip.y - tip.r * 0.08, tip.r * (isThumb ? 0.55 : 0.48), tip.r * 0.32, side * 0.12, 0, Math.PI * 2)
+    ctx.ellipse(
+      nailX,
+      nailY,
+      tip.r * (isThumb ? 0.42 : 0.36),
+      tip.r * (isThumb ? 0.55 : 0.48),
+      nailAngle + side * 0.08,
+      0,
+      Math.PI * 2,
+    )
     ctx.fill()
     ctx.fillStyle = rgba(GLOW, 0.18 + pressed * 0.25)
     ctx.beginPath()
