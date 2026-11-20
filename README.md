@@ -52,10 +52,10 @@ YouTube often blocks datacenter IPs. There is no fully automatic bypass inside t
    **Important on Railway:** do **not** use multiline `YTDLP_COOKIES` (it corrupts TAB characters). Use only **`YTDLP_COOKIES_B64`** (service variable / secret — no volume mount):
 
    1. Delete `YTDLP_COOKIES` if present  
-   2. Set **`YTDLP_COOKIES_B64`** from `yt-cookies.b64`, or run **`npm run cookies:export -- remote`** (`railway variable set … --stdin`)  
-   3. Redeploy (remote triggers it unless `RAILWAY_SKIP_DEPLOYS=1`)  
+   2. Set **`YTDLP_COOKIES_B64`** from `yt-cookies.b64`, or run **`npm run cookies:export -- remote`**  
+   3. `remote` writes the variable with `--skip-deploys`, verifies it, then redeploys (avoids the race where redeploy starts before the secret is assimilated). Set `RAILWAY_SKIP_DEPLOYS=1` to skip the redeploy step.  
 
-   `GET /api/health` must show `"source":"b64"` and `"ok":true`. Alternatives: `YTDLP_COOKIES_URL` or `YTDLP_COOKIES_FILE`. Do not commit cookie files or `.env`.
+   `GET /api/health` must show `"source":"b64"` and `"ok":true` (`remote` polls this). Alternatives: `YTDLP_COOKIES_URL` or `YTDLP_COOKIES_FILE`. Do not commit cookie files or `.env`.
 
 2. **Residential proxy (unattended)** — set **`YTDLP_PROXY`** (or `HTTPS_PROXY`) to an HTTP/SOCKS proxy URL so yt-dlp exits through a non-datacenter IP. Best option if you want links to keep working without refreshing cookies.
 
