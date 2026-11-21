@@ -929,7 +929,7 @@ export class Visualizer {
     const pressGlide = hand.ready ? 1 - Math.exp(-16 * dt) : 1
     const liftGlide = hand.ready ? 1 - Math.exp(-8 * dt) : 1
     const thumbShift = layout.whiteW * (hand.side === 'right' ? -0.18 : 0.18)
-    // High only for blacks / dense black passages / sparse black intervals; whites prefer low.
+    // Climb for blacks; once up, hold and only drop when upcoming notes clearly prefer low.
     const liftTarget = this.handLiftTarget(hand, time, targets)
     hand.lift += (liftTarget - hand.lift) * (jumped ? 1 : liftGlide)
     const liftPx = hand.lift * this.blackKeyLift()
@@ -1033,8 +1033,8 @@ export class Visualizer {
 
   /**
    * Hand height for sharps vs whites.
-   * Whites are more comfortable low; stay high only while playing blacks, through a dense
-   * black passage, or inside a short sparse-black interval (so black→white need not drop).
+   * Raise for blacks / dense black runs. Once raised, do not auto-drop — hold height and
+   * only descend when the next stretch is clearly white-friendly (no black soon).
    */
   private handLiftTarget(hand: HandState, time: number, targets: number[]): number {
     if (targets.some((midi) => isBlack(midi))) return 1
@@ -1042,34 +1042,32 @@ export class Visualizer {
     const notes = this.notes
     if (!notes) return 0
 
-    const winLo = time - 0.35
-    const winHi = time + 1.1
-    const inWin = notes.filter(
-      (note) => note.hand === hand.side && note.end > winLo && note.start < winHi,
+    const raised = hand.lift > 0.35
+    const handNotes = notes.filter((note) => note.hand === hand.side)
+    const nextBlack = handNotes.find(
+      (note) => isBlack(note.midi) && note.end > time && note.start < time + 2.2,
     )
-    const blacks = inWin
-      .filter((note) => isBlack(note.midi))
-      .sort((a, b) => a.start - b.start || a.end - b.end)
-    if (!blacks.length) return 0
+    const secsToBlack = nextBlack ? Math.max(0, nextBlack.start - time) : Infinity
 
-    const density = blacks.length / Math.max(1, inWin.length)
-    const dense = blacks.length >= 4 || (inWin.length >= 3 && density >= 0.4)
-    const margin = dense ? 0.28 : 0.16
-    const mergeGap = dense ? 0.9 : 0.4
-
-    let clusterStart = blacks[0].start
-    let clusterEnd = blacks[0].end
-    for (let i = 1; i < blacks.length; i++) {
-      const note = blacks[i]
-      if (note.start <= clusterEnd + mergeGap) {
-        clusterEnd = Math.max(clusterEnd, note.end)
-        continue
-      }
-      if (time >= clusterStart - margin && time <= clusterEnd + margin) return dense ? 0.9 : 0.85
-      clusterStart = note.start
-      clusterEnd = note.end
+    // Climb (or stay) when a black is imminent / already in a black-heavy neighborhood.
+    const winLo = time - 0.25
+    const winHi = time + 1.15
+    const inWin = handNotes.filter((note) => note.end > winLo && note.start < winHi)
+    const blacksInWin = inWin.filter((note) => isBlack(note.midi))
+    const density = blacksInWin.length / Math.max(1, inWin.length)
+    const dense = blacksInWin.length >= 4 || (inWin.length >= 3 && density >= 0.4)
+    const climbHorizon = raised ? 1.15 : dense ? 0.55 : 0.35
+    if (secsToBlack <= climbHorizon || (dense && blacksInWin.some((n) => n.start <= time + 0.7))) {
+      return dense ? 0.9 : 0.85
     }
-    if (time >= clusterStart - margin && time <= clusterEnd + margin) return dense ? 0.9 : 0.85
+
+    // Already high: hold while evaluating; drop only for a clear white stretch.
+    if (raised) {
+      if (secsToBlack <= 0.95) return 0.85
+      // Idle / long white run ahead — comfortable low.
+      return 0
+    }
+
     return 0
   }
 
