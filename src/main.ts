@@ -829,15 +829,28 @@ async function pullLibraryBridge(code: string) {
     const result = await libraryBridge.pullLibrary(code)
     await refreshLibraryButton()
     if (!libraryModal.hidden) await renderLibraryBrowser()
-    toast(t('syncBridgeReceived', { n: result.pulled }))
+    if (result.pulled > 0) toast(t('syncBridgeReceived', { n: result.pulled }))
     renderSyncBridgeStatus(libraryBridge.listening ? 'ready' : 'idle')
   } catch (error) {
+    libraryBridge.clearPendingPull()
     toast(error instanceof Error ? error.message : t('syncBridgeFail'))
     renderSyncBridgeStatus('error')
   } finally {
     libraryBridgePulling = false
     renderSyncStatus()
   }
+}
+
+/** Resume display listen after TV reload / reconnect. */
+function resumeLibraryBridgeListen() {
+  if (libraryBridge.listening) return
+  const saved = LibraryBridge.savedListenRoom()
+  if (saved.length < 4) return
+  librarySyncBridgeCode.value = saved
+  libraryBridge.listen(saved)
+  renderSyncBridgeStatus('listen')
+  renderSyncStatus()
+  void libraryBridge.pollReady(saved)
 }
 
 function stopLibraryBridge() {
@@ -1117,6 +1130,8 @@ async function openLibraryModal() {
     void restoreSyncLink().then(renderSyncStatus).catch(() => undefined)
   } else {
     renderSyncStatus()
+    // While listening, pick up packages even if SSE went quiet on Tizen.
+    if (libraryBridge.listening || libraryBridge.code) void libraryBridge.pollReady()
   }
   libraryOpenBtn.setAttribute('aria-expanded', 'true')
   queueMicrotask(ensureTvFocus)
@@ -1585,6 +1600,8 @@ librarySyncBridgeHostBtn.addEventListener('click', () => {
     }
   })()
 })
+
+if (isSmartTvUi()) resumeLibraryBridgeListen()
 
 librarySyncBridgeStopBtn.addEventListener('click', () => {
   stopLibraryBridge()
@@ -3070,7 +3087,14 @@ function loop(now: number) {
 requestAnimationFrame(loop)
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && shouldKeepScreenAwake()) setTvScreenAwake(true)
+  if (document.visibilityState !== 'visible') return
+  if (shouldKeepScreenAwake()) setTvScreenAwake(true)
+  if (!isSmartTvUi()) return
+  // Tizen often suspends SSE; resume listen + refresh the song list when coming back.
+  if (!libraryBridge.listening) resumeLibraryBridgeListen()
+  else void libraryBridge.pollReady()
+  void refreshLibraryButton()
+  if (!libraryModal.hidden) void renderLibraryBrowser()
 })
 
 // Android may drop the wake lock without hiding the tab; any tap while bridged re-arms it.

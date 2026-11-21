@@ -189,12 +189,13 @@ export async function handleLibraryBridge(req, res, url, sendJson) {
         return
       }
       try {
-        res.write(': ping\n\n')
+        // Named event (not a comment) so EventSource clients — including Tizen — can detect liveness.
+        sseWrite(res, 'ping', { t: Date.now(), ready: room.ready })
       } catch {
         clearInterval(heartbeat)
         room.listeners.delete(res)
       }
-    }, 15000)
+    }, 12000)
     req.on('close', () => {
       clearInterval(heartbeat)
       room.listeners.delete(res)
