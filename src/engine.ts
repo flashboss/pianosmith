@@ -442,7 +442,7 @@ function fillCapsule(
 /** Tip depth on the key (0 thumb … 4 pinky). Negative = deeper into the keyboard. */
 const FINGER_TIP_DEPTH = [0.1, 0.02, -0.05, 0.01, 0.08] as const
 /** Dome / arch strength — tamburello curl; middle highest, thumb flatter. */
-const FINGER_ARCH = [0.45, 1.2, 1.4, 1.15, 0.7] as const
+const FINGER_ARCH = [0.5, 1.35, 1.55, 1.28, 0.85] as const
 /** Knuckle row offset in palm units (negative = knuckles closer to tips = taller arch). */
 const FINGER_KNUCKLE_LIFT = [0.18, -0.28, -0.42, -0.26, 0] as const
 /**
@@ -458,6 +458,7 @@ const FINGER_REST_LEN = 4.35
  */
 const HAND_LEN_SCALE = 1.35
 
+/** MCP → PIP → DIP → tip along a tamburello (arched) finger. */
 function fingerChain(
   baseX: number,
   baseY: number,
@@ -474,25 +475,31 @@ function fingerChain(
   const dx = tipX - baseX
   const dy = tipY - baseY
   const len = Math.hypot(dx, dy) || 1
-  // Tamburello curl: joints dome toward the palm (down the screen).
-  const pressFlat = 1 - pressed * 0.28
-  const bend = Math.min(isThumb ? 16 : 48, len * (0.07 + 0.14 * arch)) * arch * pressFlat
-  const peak = thickness * (0.85 + arch * 2.15) * pressFlat
-  // No outward splay on thumb/pinky — joints stay on the base→tip line.
-  const lateral = isOuter ? 0 : side * thickness * (0.03 + arch * 0.02)
-  const knukleX = baseX + dx * 0.28 + lateral * 0.08
-  const knukleY = baseY + dy * 0.24 + bend * 0.4 + peak * 0.22
-  const midX = baseX + dx * 0.62 + lateral * 0.18
-  const midY = baseY + dy * 0.55 + bend * 1.05 + peak * 0.55
-  const tipRadius = isThumb ? 0.72 : 0.58
-  const midRadius = isThumb ? 0.9 : 0.74 + arch * 0.06
-  const baseRadius = isThumb ? 1.02 : 0.88 + arch * 0.06
-  const unit = thickness * (0.9 + arch * 0.06)
+  // Anatomical segment stations (proximal longer, distal shorter).
+  const tPip = isThumb ? 0.4 : 0.46
+  const tDip = isThumb ? 0.7 : 0.76
+  // Press flattens the tip contact a bit but keeps a soft PIP dome.
+  const pressFlat = 1 - pressed * 0.22
+  const curl =
+    Math.min(isThumb ? 18 : 58, len * (0.09 + 0.17 * arch)) * arch * pressFlat
+  const peak = thickness * (1.05 + arch * 2.55) * pressFlat
+  // Mild inward bias on index/ring; thumb/pinky stay on the base→tip line.
+  const lateral = isOuter ? 0 : side * thickness * (0.04 + arch * 0.025)
+  const unit = thickness * (0.92 + arch * 0.05)
+  // PIP is the tamburello apex (dome toward the palm / down the screen).
   return [
-    { x: baseX, y: baseY, r: unit * baseRadius },
-    { x: knukleX, y: knukleY, r: unit * midRadius },
-    { x: midX, y: midY, r: unit * tipRadius * 1.06 },
-    { x: tipX, y: tipY, r: unit * tipRadius },
+    { x: baseX, y: baseY, r: unit * (isThumb ? 1.08 : 0.98) },
+    {
+      x: baseX + dx * tPip + lateral * 0.22,
+      y: baseY + dy * tPip + curl * 1.2 + peak * 0.7,
+      r: unit * (isThumb ? 0.96 : 0.86 + arch * 0.05),
+    },
+    {
+      x: baseX + dx * tDip + lateral * 0.1,
+      y: baseY + dy * tDip + curl * 0.48 + peak * 0.22,
+      r: unit * (isThumb ? 0.8 : 0.7),
+    },
+    { x: tipX, y: tipY, r: unit * (isThumb ? 0.72 : 0.56) },
   ]
 }
 
@@ -1576,8 +1583,39 @@ export class Visualizer {
       ctx.fillStyle = skin
       fillCapsule(ctx, a.x, a.y, a.r, b.x, b.y, b.r)
 
-      ctx.fillStyle = rgba(SKIN_LIGHT, 0.35)
-      fillCapsule(ctx, a.x - side * a.r * 0.18, a.y - a.r * 0.12, a.r * 0.42, b.x - side * b.r * 0.18, b.y - b.r * 0.12, b.r * 0.36)
+      // Soft side light along the shaft — keep it narrow so joints stay readable.
+      ctx.fillStyle = rgba(SKIN_LIGHT, 0.22)
+      fillCapsule(
+        ctx,
+        a.x - side * a.r * 0.22,
+        a.y - a.r * 0.08,
+        a.r * 0.28,
+        b.x - side * b.r * 0.22,
+        b.y - b.r * 0.08,
+        b.r * 0.24,
+      )
+    }
+
+    // Soft knuckle hint at PIP only — light crease, no heavy bulbs.
+    {
+      const pip = chain[1]
+      const dip = chain[2] ?? pip
+      const mcp = chain[0]
+      const ang = Math.atan2(dip.y - mcp.y, dip.x - mcp.x)
+      ctx.strokeStyle = rgba(SKIN_DARK, 0.18)
+      ctx.lineWidth = Math.max(0.8, pip.r * 0.1)
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.ellipse(
+        pip.x,
+        pip.y + pip.r * 0.2,
+        pip.r * 0.38,
+        pip.r * 0.12,
+        ang + Math.PI / 2,
+        Math.PI * 0.2,
+        Math.PI * 0.8,
+      )
+      ctx.stroke()
     }
 
     const tip = chain[chain.length - 1]
@@ -1587,9 +1625,9 @@ export class Visualizer {
     const jlen = Math.hypot(jdx, jdy) || 1
     const ux = jdx / jlen
     const uy = jdy / jlen
-    // Nail on the dorsal side (tamburello), not flat on the key.
-    const nailX = tip.x - ux * tip.r * 0.55 + side * tip.r * 0.05
-    const nailY = tip.y - uy * tip.r * 0.55
+    // Nail on the dorsal side of the curled tip, not flat on the key.
+    const nailX = tip.x - ux * tip.r * 0.5 + side * tip.r * 0.04
+    const nailY = tip.y - uy * tip.r * 0.5 - tip.r * 0.08
     const nailAngle = Math.atan2(uy, ux) + Math.PI / 2
 
     const glow = Math.max(0.12, pressed * 0.55)
@@ -1601,13 +1639,23 @@ export class Visualizer {
     ctx.ellipse(tip.x, tip.y + tip.r * 0.15, tip.r * 1.8, tip.r * 1.1, 0, 0, Math.PI * 2)
     ctx.fill()
 
-    ctx.fillStyle = rgba(SKIN_NAIL, 0.9)
+    // Soft fingertip pad (flesh), then nail above it.
+    const pad = ctx.createRadialGradient(tip.x, tip.y, tip.r * 0.1, tip.x, tip.y, tip.r)
+    pad.addColorStop(0, rgba(SKIN_LIGHT, 1))
+    pad.addColorStop(0.65, rgba(SKIN_MID, 1))
+    pad.addColorStop(1, rgba(SKIN_DARK, 0.9))
+    ctx.fillStyle = pad
+    ctx.beginPath()
+    ctx.ellipse(tip.x, tip.y, tip.r * 0.95, tip.r * 0.82, nailAngle, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = rgba(SKIN_NAIL, 0.92)
     ctx.beginPath()
     ctx.ellipse(
       nailX,
       nailY,
-      tip.r * (isThumb ? 0.42 : 0.36),
-      tip.r * (isThumb ? 0.55 : 0.48),
+      tip.r * (isThumb ? 0.4 : 0.34),
+      tip.r * (isThumb ? 0.52 : 0.46),
       nailAngle + side * 0.08,
       0,
       Math.PI * 2,
@@ -1615,7 +1663,7 @@ export class Visualizer {
     ctx.fill()
     ctx.fillStyle = rgba(GLOW, 0.18 + pressed * 0.25)
     ctx.beginPath()
-    ctx.ellipse(tip.x, tip.y + tip.r * 0.2, tip.r * 0.7, tip.r * 0.28, 0, 0, Math.PI * 2)
+    ctx.ellipse(tip.x, tip.y + tip.r * 0.22, tip.r * 0.65, tip.r * 0.26, 0, 0, Math.PI * 2)
     ctx.fill()
   }
 
