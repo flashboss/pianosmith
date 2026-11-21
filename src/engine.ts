@@ -929,8 +929,8 @@ export class Visualizer {
     const pressGlide = hand.ready ? 1 - Math.exp(-16 * dt) : 1
     const liftGlide = hand.ready ? 1 - Math.exp(-8 * dt) : 1
     const thumbShift = layout.whiteW * (hand.side === 'right' ? -0.18 : 0.18)
-    // Whole hand lifts / slides forward for sharps — fingers stay rigid length.
-    const liftTarget = targets.some((midi) => isBlack(midi)) ? 1 : 0
+    // High only for blacks / dense black passages / sparse black intervals; whites prefer low.
+    const liftTarget = this.handLiftTarget(hand, time, targets)
     hand.lift += (liftTarget - hand.lift) * (jumped ? 1 : liftGlide)
     const liftPx = hand.lift * this.blackKeyLift()
     for (let index = 0; index < 5; index++) {
@@ -940,7 +940,6 @@ export class Visualizer {
       const pressed = sounding.some((playing) => Math.round(playing) === Math.round(midi)) ? 1 : 0
       finger.midi = midi
       const tipX = layout.centerX(midi) + (index === 0 ? thumbShift : 0)
-      // Same lift for every finger; tiny extra depth on blacks only (not a stretch).
       const tipY = this.fingerY(index, pressed, onBlack) - liftPx
       finger.x += (tipX - finger.x) * glide
       finger.y += (tipY - finger.y) * glide
@@ -1032,16 +1031,57 @@ export class Visualizer {
     return (this.h - this.keyboardTop) * 0.2
   }
 
+  /**
+   * Hand height for sharps vs whites.
+   * Whites are more comfortable low; stay high only while playing blacks, through a dense
+   * black passage, or inside a short sparse-black interval (so black→white need not drop).
+   */
+  private handLiftTarget(hand: HandState, time: number, targets: number[]): number {
+    if (targets.some((midi) => isBlack(midi))) return 1
+
+    const notes = this.notes
+    if (!notes) return 0
+
+    const winLo = time - 0.35
+    const winHi = time + 1.1
+    const inWin = notes.filter(
+      (note) => note.hand === hand.side && note.end > winLo && note.start < winHi,
+    )
+    const blacks = inWin
+      .filter((note) => isBlack(note.midi))
+      .sort((a, b) => a.start - b.start || a.end - b.end)
+    if (!blacks.length) return 0
+
+    const density = blacks.length / Math.max(1, inWin.length)
+    const dense = blacks.length >= 4 || (inWin.length >= 3 && density >= 0.4)
+    const margin = dense ? 0.28 : 0.16
+    const mergeGap = dense ? 0.9 : 0.4
+
+    let clusterStart = blacks[0].start
+    let clusterEnd = blacks[0].end
+    for (let i = 1; i < blacks.length; i++) {
+      const note = blacks[i]
+      if (note.start <= clusterEnd + mergeGap) {
+        clusterEnd = Math.max(clusterEnd, note.end)
+        continue
+      }
+      if (time >= clusterStart - margin && time <= clusterEnd + margin) return dense ? 0.9 : 0.85
+      clusterStart = note.start
+      clusterEnd = note.end
+    }
+    if (time >= clusterStart - margin && time <= clusterEnd + margin) return dense ? 0.9 : 0.85
+    return 0
+  }
+
   private fingerY(index: number, pressed: number, onBlack = false): number {
     const whiteH = this.h - this.keyboardTop
     const depth = FINGER_TIP_DEPTH[index] ?? 0
-    // Sit toward the front of the key after the shorter keyboard band.
-    const blackForward = onBlack ? -whiteH * 0.035 : 0
+    // Blacks near the rear; whites default lower (toward the player) when the hand is not lifted.
+    const along = onBlack ? 0.5 : 0.72
     return (
       this.keyboardTop +
-      whiteH * (0.78 + depth) +
-      blackForward +
-      pressed * Math.min(14, whiteH * 0.045)
+      whiteH * (along + depth) +
+      pressed * Math.min(12, whiteH * 0.04)
     )
   }
 
