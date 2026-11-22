@@ -398,21 +398,7 @@ function inkColor(color: [number, number, number], theme: SheetPalette): [number
   return [Math.round(color[0] * scale), Math.round(color[1] * scale), Math.round(color[2] * scale)]
 }
 
-function restGlyph(dur: RhythmDur): string {
-  switch (dur) {
-    case 'w':
-      return '𝄻'
-    case 'h':
-      return '𝄼'
-    case 'q':
-      return '𝄽'
-    case '8':
-      return '𝄾'
-    case '16':
-      return '𝄿'
-  }
-}
-
+/** Draw rests with canvas paths — music Unicode glyphs often render as tofu boxes. */
 function drawRest(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -423,31 +409,66 @@ function drawRest(
   active: boolean,
   theme: SheetPalette,
 ) {
-  const y =
-    dur === 'w'
-      ? staffTop + gap * 1.15
-      : dur === 'h'
-        ? staffTop + gap * 2
-        : staffTop + gap * 2
-  ctx.fillStyle = rgba(
-    theme.noteInkScale < 1 ? [30, 30, 30] : [235, 235, 235],
-    active ? 1 : 0.88,
-  )
-  ctx.font = `700 ${Math.round(gap * (dur === 'q' || dur === '8' || dur === '16' ? 2.4 : 1.7))}px "Times New Roman", Georgia, serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  const mark = restGlyph(dur)
-  // Fallback ASCII-ish marks if music glyphs missing.
-  if (ctx.measureText(mark).width < gap * 0.2) {
-    ctx.font = `700 ${Math.round(gap * 1.4)}px system-ui, sans-serif`
-    const fallback = dur === 'w' ? '—' : dur === 'h' ? '▬' : dur === 'q' ? '𝄽' : '♪'
-    ctx.fillText(fallback, x, y)
+  const ink = theme.noteInkScale < 1 ? ([30, 30, 30] as [number, number, number]) : ([235, 235, 235] as [number, number, number])
+  const alpha = active ? 1 : 0.9
+  ctx.fillStyle = rgba(ink, alpha)
+  ctx.strokeStyle = rgba(ink, alpha)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  const mid = staffTop + gap * 2
+  let dotY = mid
+
+  if (dur === 'w' || dur === 'h') {
+    // Whole hangs under the 2nd line; half sits on the 3rd line.
+    const lineY = dur === 'w' ? staffTop + gap : staffTop + gap * 2
+    const barH = Math.max(3, gap * 0.42)
+    const barW = gap * 1.15
+    const y = dur === 'w' ? lineY + 1 : lineY - barH - 1
+    ctx.fillRect(x - barW / 2, y, barW, barH)
+    dotY = y + barH / 2
+  } else if (dur === 'q') {
+    // Classic quarter-rest zigzag.
+    const s = gap * 0.95
+    ctx.lineWidth = Math.max(1.6, gap * 0.18)
+    ctx.beginPath()
+    ctx.moveTo(x + s * 0.15, mid - s * 1.15)
+    ctx.quadraticCurveTo(x + s * 0.85, mid - s * 0.55, x - s * 0.05, mid - s * 0.15)
+    ctx.quadraticCurveTo(x + s * 0.75, mid + s * 0.25, x - s * 0.1, mid + s * 0.55)
+    ctx.quadraticCurveTo(x + s * 0.55, mid + s * 0.95, x + s * 0.05, mid + s * 1.2)
+    ctx.stroke()
+    // Lower “hook” blob.
+    ctx.beginPath()
+    ctx.ellipse(x - s * 0.05, mid + s * 1.15, s * 0.22, s * 0.28, 0.4, 0, Math.PI * 2)
+    ctx.fill()
+    dotY = mid
   } else {
-    ctx.fillText(mark, x, y)
+    // Eighth / sixteenth: stem + curved flag(s) + filled head.
+    const flags = dur === '16' ? 2 : 1
+    const top = mid - gap * 1.05
+    const bot = mid + gap * 0.85
+    ctx.lineWidth = Math.max(1.4, gap * 0.15)
+    ctx.beginPath()
+    ctx.moveTo(x, top)
+    ctx.lineTo(x, bot)
+    ctx.stroke()
+    for (let i = 0; i < flags; i++) {
+      const y0 = top + i * gap * 0.55
+      ctx.beginPath()
+      ctx.moveTo(x, y0)
+      ctx.bezierCurveTo(x + gap * 0.95, y0 + gap * 0.1, x + gap * 0.85, y0 + gap * 0.75, x + gap * 0.15, y0 + gap * 0.95)
+      ctx.lineWidth = Math.max(1.5, gap * 0.16)
+      ctx.stroke()
+    }
+    ctx.beginPath()
+    ctx.ellipse(x, bot, gap * 0.22, gap * 0.18, 0, 0, Math.PI * 2)
+    ctx.fill()
+    dotY = mid
   }
+
   for (let i = 0; i < dots; i++) {
     ctx.beginPath()
-    ctx.arc(x + gap * 0.85 + i * gap * 0.35, y, Math.max(1.2, gap * 0.12), 0, Math.PI * 2)
+    ctx.arc(x + gap * 0.95 + i * gap * 0.35, dotY, Math.max(1.2, gap * 0.12), 0, Math.PI * 2)
     ctx.fill()
   }
 }
@@ -946,14 +967,27 @@ export function renderSheetPrintPage(
 ): { canvas: HTMLCanvasElement; info: SheetPrintInfo } {
   const systemsPerPage = Math.max(1, opts.systemsPerPage ?? 3)
   const model = buildSheetModel(notes)
+  // Probe gap, then shrink the layout height so stems / ledger / tempo stay inside the page.
+  const probe = pageLayout(opts.width, opts.height, model.fifths, model.bpm, model.timeSig, systemsPerPage)
+  const overflowPad = Math.max(40, probe.gap * 4)
   // Keep system geometry identical on every page (including the last short page).
-  const layout = pageLayout(opts.width, opts.height, model.fifths, model.bpm, model.timeSig, systemsPerPage)
+  const layout = pageLayout(
+    opts.width,
+    Math.max(160, opts.height - overflowPad * 2),
+    model.fifths,
+    model.bpm,
+    model.timeSig,
+    systemsPerPage,
+  )
   const measureCount = Math.max(1, Math.ceil(model.tEnd / layout.measureSec))
   const totalSystems = Math.max(1, Math.ceil(measureCount / layout.measuresPerSystem))
   const totalPages = Math.max(1, Math.ceil(totalSystems / systemsPerPage))
   const pageIndex = Math.max(0, Math.min(opts.pageIndex, totalPages - 1))
   const firstSystem = pageIndex * systemsPerPage
   const rows = Math.min(systemsPerPage, totalSystems - firstSystem)
+  // Vertically center the drawn systems (helps short last pages and keeps overflow in-bounds).
+  const usedH = layout.topPad + rows * layout.systemH
+  const offsetY = Math.max(overflowPad, (opts.height - usedH) / 2)
 
   const scale = 2
   const canvas = document.createElement('canvas')
@@ -968,6 +1002,8 @@ export function renderSheetPrintPage(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, opts.width, opts.height)
 
+  ctx.save()
+  ctx.translate(0, offsetY)
   drawSystemsBlock(ctx, model, layout, {
     firstSystem,
     rows,
@@ -976,6 +1012,7 @@ export function renderSheetPrintPage(
     playTime: null,
     highlightCursor: false,
   })
+  ctx.restore()
 
   return {
     canvas,
