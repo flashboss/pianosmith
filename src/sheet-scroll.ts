@@ -206,6 +206,8 @@ function pageLayout(
   bpm: number,
   timeSig: TimeSignature,
   systems: number,
+  /** When set, keep bar packing stable across frames/resizes. */
+  freezeMeasuresPerSystem?: number,
 ): PageLayout {
   const height = Math.max(160, areaH)
   const staffLeft = 14
@@ -223,10 +225,9 @@ function pageLayout(
   const contentW = Math.max(80, staffRight - contentLeft)
   const measureSec = measureSeconds(bpm, timeSig)
   // Prefer ~measure-width that stays readable while packing 2–4 bars per system.
-  const measuresPerSystem = Math.max(
-    2,
-    Math.min(4, Math.round(contentW / Math.max(100, gap * 16 + measureSec * 18))),
-  )
+  const measuresPerSystem =
+    freezeMeasuresPerSystem ??
+    Math.max(2, Math.min(4, Math.round(contentW / Math.max(100, gap * 16 + measureSec * 18))))
   const systemSec = measuresPerSystem * measureSec
   const pxPerSec = contentW / systemSec
   return {
@@ -823,6 +824,81 @@ function buildSheetModel(notes: NoteEvent[]): SheetModel {
   }
 }
 
+type MeasureEvents = { treble: ReturnType<typeof rhythmEventsForMeasure>; bass: ReturnType<typeof rhythmEventsForMeasure> }
+
+/** Live view: freeze analysis so notation does not morph while the playhead moves. */
+type LiveSheetCache = {
+  notes: NoteEvent[]
+  notesLen: number
+  widthBucket: number
+  model: SheetModel
+  measuresPerSystem: number
+  eventsByMeasure: Map<number, MeasureEvents>
+}
+
+let liveSheetCache: LiveSheetCache | null = null
+
+function liveSheetContext(
+  notes: NoteEvent[],
+  w: number,
+  areaH: number,
+  systems: number,
+): { model: SheetModel; layout: PageLayout; eventsByMeasure: Map<number, MeasureEvents> } {
+  const widthBucket = Math.round(w / 48)
+  const hit =
+    liveSheetCache &&
+    liveSheetCache.notes === notes &&
+    liveSheetCache.notesLen === notes.length &&
+    liveSheetCache.widthBucket === widthBucket
+
+  if (!hit) {
+    const model = buildSheetModel(notes)
+    const layout = pageLayout(w, areaH, model.fifths, model.bpm, model.timeSig, systems)
+    const fresh: LiveSheetCache = {
+      notes,
+      notesLen: notes.length,
+      widthBucket,
+      model,
+      measuresPerSystem: layout.measuresPerSystem,
+      eventsByMeasure: new Map(),
+    }
+    liveSheetCache = fresh
+    return { model, layout, eventsByMeasure: fresh.eventsByMeasure }
+  }
+
+  const cached = liveSheetCache!
+  const layout = pageLayout(
+    w,
+    areaH,
+    cached.model.fifths,
+    cached.model.bpm,
+    cached.model.timeSig,
+    systems,
+    cached.measuresPerSystem,
+  )
+  return {
+    model: cached.model,
+    layout,
+    eventsByMeasure: cached.eventsByMeasure,
+  }
+}
+
+function eventsForMeasure(
+  cache: Map<number, MeasureEvents>,
+  model: SheetModel,
+  measureIndex: number,
+  measureStart: number,
+): MeasureEvents {
+  const existing = cache.get(measureIndex)
+  if (existing) return existing
+  const next: MeasureEvents = {
+    treble: rhythmEventsForMeasure(model.rightChords, measureStart, model.beat, model.timeSig),
+    bass: rhythmEventsForMeasure(model.leftChords, measureStart, model.beat, model.timeSig),
+  }
+  cache.set(measureIndex, next)
+  return next
+}
+
 function drawSystemsBlock(
   ctx: CanvasRenderingContext2D,
   model: SheetModel,
@@ -834,12 +910,12 @@ function drawSystemsBlock(
     theme: SheetPalette
     playTime: number | null
     highlightCursor: boolean
+    eventsByMeasure?: Map<number, MeasureEvents>
   },
 ) {
   const { gap, topPad, systemH, contentLeft, contentW, measuresPerSystem, measureSec, systemSec, fifths } =
     layout
-  const { bpm: _bpm, timeSig, beat, measureTicks, rightChords, leftChords } = model
-  void _bpm
+  const { beat, measureTicks } = model
   const measureW = contentW / measuresPerSystem
   const time = opts.playTime
   const currentSystem = time == null ? -1 : Math.floor(Math.max(0, time) / systemSec)
@@ -862,11 +938,16 @@ function drawSystemsBlock(
     const systemStart = frame.systemStart
 
     for (let m = 0; m < measuresPerSystem; m++) {
+      const measureIndex = systemIndex * measuresPerSystem + m
       const measureStart = systemStart + m * measureSec
       const measureX = contentLeft + m * measureW
-      const trebleEvents = rhythmEventsForMeasure(rightChords, measureStart, beat, timeSig)
-      const bassEvents = rhythmEventsForMeasure(leftChords, measureStart, beat, timeSig)
-      drawRhythmStaff(ctx, trebleEvents, {
+      const events = opts.eventsByMeasure
+        ? eventsForMeasure(opts.eventsByMeasure, model, measureIndex, measureStart)
+        : {
+            treble: rhythmEventsForMeasure(model.rightChords, measureStart, model.beat, model.timeSig),
+            bass: rhythmEventsForMeasure(model.leftChords, measureStart, model.beat, model.timeSig),
+          }
+      drawRhythmStaff(ctx, events.treble, {
         clef: 'treble',
         staffTop: frame.trebleTop,
         gap,
@@ -880,7 +961,7 @@ function drawSystemsBlock(
         showNames: opts.showNames,
         theme: opts.theme,
       })
-      drawRhythmStaff(ctx, bassEvents, {
+      drawRhythmStaff(ctx, events.bass, {
         clef: 'bass',
         staffTop: frame.bassTop,
         gap,
@@ -929,8 +1010,7 @@ export function drawScrollingSheet(
   sheetTheme: SheetTheme = 'light',
 ) {
   const theme = THEMES[sheetTheme === 'dark' ? 'dark' : 'light']
-  const model = buildSheetModel(notes)
-  const layout = pageLayout(w, keyboardTop - 4, model.fifths, model.bpm, model.timeSig, 4)
+  const { model, layout, eventsByMeasure } = liveSheetContext(notes, w, keyboardTop - 4, 4)
   const { systems, systemSec } = layout
 
   const t = Math.max(0, time)
@@ -954,6 +1034,7 @@ export function drawScrollingSheet(
     theme,
     playTime: t,
     highlightCursor: true,
+    eventsByMeasure,
   })
 
   ctx.restore()
