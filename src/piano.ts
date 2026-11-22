@@ -37,67 +37,103 @@ function scheduleStrike(
   startAt: number,
   elapsed = 0,
 ): Voice {
-  const freq = 440 * 2 ** ((note.midi - 69) / 12)
+  const midi = note.midi
+  const freq = 440 * 2 ** ((midi - 69) / 12)
   const dur = Math.max(0.08, note.end - note.start)
   const remaining = Math.max(0.05, dur - elapsed)
   const vel = Math.max(0.15, Math.min(1, note.velocity))
-  const partials: Array<[number, number]> = [
-    [1, 1],
-    [2, 0.52],
-    [3, 0.28],
-    [4, 0.14],
-    [5, 0.07],
-    [6, 0.035],
+  // Register blend: 0 deep bass … 1 high treble.
+  const bass = Math.max(0, Math.min(1, (55 - midi) / 28))
+  const treble = Math.max(0, Math.min(1, (midi - 72) / 24))
+  // Stretched partials (piano inharmonicity) — stronger in the bass.
+  const B = 0.00012 + bass * 0.00055
+  const partialAmps = [
+    1.05 + bass * 0.55,
+    0.48 - bass * 0.12,
+    0.26 - bass * 0.08 + treble * 0.06,
+    0.13 - bass * 0.05 + treble * 0.05,
+    0.06 + treble * 0.05,
+    0.03 + treble * 0.04,
+    bass > 0.15 ? 0.09 * bass : 0,
+    bass > 0.25 ? 0.05 * bass : 0,
   ]
 
   const filter = ctx.createBiquadFilter()
   filter.type = 'lowpass'
-  filter.Q.value = 0.6
+  filter.Q.value = 0.55 + bass * 0.25
   const when = Math.max(startAt, ctx.currentTime)
-  filter.frequency.setValueAtTime(Math.min(9000, freq * 8), when)
-  filter.frequency.exponentialRampToValueAtTime(Math.max(180, freq * 1.4), when + Math.min(remaining, 1.4))
+  const bright = Math.min(7200, freq * (5.5 - bass * 2.2 + treble * 2.5))
+  const dull = Math.max(90 + bass * 40, freq * (1.15 + treble * 0.5))
+  filter.frequency.setValueAtTime(bright, when)
+  filter.frequency.exponentialRampToValueAtTime(dull, when + Math.min(remaining, 1.8 + bass * 1.2))
 
   const pan = ctx.createStereoPanner()
-  pan.pan.value = Math.max(-0.55, Math.min(0.55, (note.midi - 60) / 36))
+  pan.pan.value = Math.max(-0.55, Math.min(0.55, (midi - 60) / 36))
   filter.connect(pan)
   pan.connect(dest)
 
   const nodes: Array<AudioScheduledSourceNode> = []
-  const release = Math.min(3.4, Math.max(remaining + 0.25, 1.55 - (note.midi - 60) * 0.018))
+  const release = Math.min(
+    5.2,
+    Math.max(remaining + 0.3 + bass * 0.9, 1.7 + bass * 1.6 - treble * 0.55 - (midi - 60) * 0.012),
+  )
   const attackScale = elapsed > 0.02 ? 0.55 : 1
+  const level = 0.16 + bass * 0.07
 
-  for (const [mult, amp] of partials) {
+  for (let n = 1; n <= partialAmps.length; n++) {
+    const amp = partialAmps[n - 1]
+    if (amp < 0.01) continue
     const osc = ctx.createOscillator()
     osc.type = 'sine'
-    osc.frequency.value = freq * mult
+    // Inharmonic partial: f * n * sqrt(1 + B n²)
+    osc.frequency.value = freq * n * Math.sqrt(1 + B * n * n)
     const gain = ctx.createGain()
-    const peak = Math.max(0.0002, vel * amp * 0.18 * attackScale)
-    const end = when + release / Math.sqrt(mult)
+    const peak = Math.max(0.0002, vel * amp * level * attackScale)
+    const end = when + release / Math.pow(n, 0.42 + bass * 0.12)
+    const attack = 0.006 + bass * 0.012
     gain.gain.setValueAtTime(0.0001, when)
-    gain.gain.exponentialRampToValueAtTime(peak, when + 0.008)
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.55), when + 0.05)
+    gain.gain.exponentialRampToValueAtTime(peak, when + attack)
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * (0.62 + bass * 0.12)), when + attack + 0.06)
     gain.gain.exponentialRampToValueAtTime(0.0001, end)
     osc.connect(gain)
     gain.connect(filter)
     osc.start(when)
-    osc.stop(end + 0.02)
+    osc.stop(end + 0.03)
     nodes.push(osc)
+  }
+
+  // Soft low “body” thump for bass notes (felt more than heard as click).
+  if (elapsed < 0.02 && bass > 0.2) {
+    const body = ctx.createOscillator()
+    body.type = 'sine'
+    body.frequency.value = Math.max(28, freq * 0.5)
+    const bodyGain = ctx.createGain()
+    const bodyPeak = vel * bass * 0.11 * attackScale
+    bodyGain.gain.setValueAtTime(0.0001, when)
+    bodyGain.gain.exponentialRampToValueAtTime(Math.max(0.0002, bodyPeak), when + 0.012)
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.18 + bass * 0.12)
+    body.connect(bodyGain)
+    bodyGain.connect(pan)
+    body.start(when)
+    body.stop(when + 0.35)
+    nodes.push(body)
   }
 
   if (elapsed < 0.02) {
     const hammer = ctx.createBufferSource()
     hammer.buffer = noise
-    const highpass = ctx.createBiquadFilter()
-    highpass.type = 'highpass'
-    highpass.frequency.value = 900
+    const hammerFilter = ctx.createBiquadFilter()
+    hammerFilter.type = bass > 0.35 ? 'bandpass' : 'highpass'
+    hammerFilter.frequency.value = bass > 0.35 ? 180 + bass * 120 : 700 + treble * 900
+    hammerFilter.Q.value = bass > 0.35 ? 0.7 : 0.5
     const hammerGain = ctx.createGain()
-    hammerGain.gain.setValueAtTime(vel * 0.18, when)
-    hammerGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.035)
-    hammer.connect(highpass)
-    highpass.connect(hammerGain)
+    hammerGain.gain.setValueAtTime(vel * (0.1 + treble * 0.1 - bass * 0.04), when)
+    hammerGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.03 + bass * 0.025)
+    hammer.connect(hammerFilter)
+    hammerFilter.connect(hammerGain)
     hammerGain.connect(pan)
     hammer.start(when)
-    hammer.stop(when + 0.05)
+    hammer.stop(when + 0.06)
     nodes.push(hammer)
   }
 

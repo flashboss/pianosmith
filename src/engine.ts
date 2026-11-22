@@ -1,5 +1,6 @@
 import type { NoteEvent } from './types'
-import { drawScrollingSheet } from './sheet-scroll'
+import { drawScrollingSheet, type SheetTheme } from './sheet-scroll'
+export type { SheetTheme }
 import {
   bestFingerAssignment,
   canFingerNotes,
@@ -512,6 +513,7 @@ export class Visualizer {
   private showNames = false
   private showHands = true
   private viewMode: ViewMode = 'falling'
+  private sheetTheme: SheetTheme = 'light'
   private zoom = false
   private keyLo = KEYBOARD_DEFAULT_LO
   private keyHi = KEYBOARD_DEFAULT_LO + KEYBOARD_DEFAULT_KEYS - 1
@@ -556,6 +558,14 @@ export class Visualizer {
 
   getViewMode(): ViewMode {
     return this.viewMode
+  }
+
+  setSheetTheme(theme: SheetTheme) {
+    this.sheetTheme = theme === 'dark' ? 'dark' : 'light'
+  }
+
+  getSheetTheme(): SheetTheme {
+    return this.sheetTheme
   }
 
   /** Set visible MIDI range (inclusive). Trims/grows from either edge. */
@@ -680,7 +690,15 @@ export class Visualizer {
 
     const active = this.activeNotes(time)
     if (this.viewMode === 'sheet') {
-      drawScrollingSheet(ctx, this.notes ?? [], time, this.w, this.keyboardTop, this.showNames)
+      drawScrollingSheet(
+        ctx,
+        this.notes ?? [],
+        time,
+        this.w,
+        this.keyboardTop,
+        this.showNames,
+        this.sheetTheme,
+      )
     } else {
       this.drawNotes(time, layout)
     }

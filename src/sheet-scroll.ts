@@ -3,34 +3,165 @@ import { noteLabel, rgba } from './theory'
 
 /** Live scrolling grand-staff view with line wraps filling the page. */
 
-const LETTER_STEPS = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6] as const
+export type SheetTheme = 'light' | 'dark'
+
+type SheetPalette = {
+  page: string
+  staff: string
+  ink: string
+  barSoft: string
+  barStrong: string
+  label: string
+  activeWash: string
+  noteInkScale: number
+  sustainActive: number
+  sustainIdle: number
+  activeRing: string
+}
+
+const THEMES: Record<SheetTheme, SheetPalette> = {
+  light: {
+    page: '#f7f4ee',
+    staff: 'rgba(20,20,20,0.85)',
+    ink: 'rgba(15,15,15,0.95)',
+    barSoft: 'rgba(30,30,30,0.22)',
+    barStrong: 'rgba(20,20,20,0.75)',
+    label: 'rgba(20,20,20,0.9)',
+    activeWash: 'rgba(255,122,50,0.08)',
+    noteInkScale: 0.42,
+    sustainActive: 0.22,
+    sustainIdle: 0.12,
+    activeRing: 'rgba(255,255,255,0)',
+  },
+  dark: {
+    page: '#121216',
+    staff: 'rgba(230,230,230,0.55)',
+    ink: 'rgba(245,245,245,0.88)',
+    barSoft: 'rgba(255,255,255,0.1)',
+    barStrong: 'rgba(230,230,230,0.45)',
+    label: 'rgba(255,255,255,0.9)',
+    activeWash: 'rgba(255,122,50,0.06)',
+    noteInkScale: 1,
+    sustainActive: 0.28,
+    sustainIdle: 0.14,
+    activeRing: 'rgba(255,255,255,0.85)',
+  },
+}
+
+/** Sharp spelling: C# sits on the C line. Flat spelling: Db sits on the D line. */
+const LETTER_STEPS_SHARP = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6] as const
+const LETTER_STEPS_FLAT = [0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6] as const
 const SHARP_PC = [false, true, false, true, false, false, true, false, true, false, true, false]
+/** Black keys spelled as flats: Db Eb Gb Ab Bb */
+const FLAT_BLACK_PC = [false, true, false, true, false, false, true, false, true, false, true, false]
 const MEASURE_SEC = 2.4
 
-function diatonicFromC0(midi: number): number {
+/** Order of sharps / flats in a key signature. */
+const SHARP_ORDER = [5, 0, 7, 2, 9, 4, 11] as const // F C G D A E B
+const FLAT_ORDER = [10, 3, 8, 1, 6, 11, 4] as const // B E A D G C F
+/** Staff-placement MIDI for standard key-signature positions. */
+const TREBLE_SHARP_MIDI = [77, 72, 79, 74, 69, 76, 71] as const
+const TREBLE_FLAT_MIDI = [71, 76, 69, 74, 67, 72, 65] as const
+const BASS_SHARP_MIDI = [53, 48, 55, 50, 45, 52, 47] as const
+const BASS_FLAT_MIDI = [47, 52, 45, 50, 43, 48, 41] as const
+
+/** Major tonic pitch-class → fifths (−7…7). */
+const MAJOR_FIFTHS = [0, 7, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5] as const
+const KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+const KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+
+export type KeySignature = { fifths: number; mode: 'major' | 'minor'; tonicPc: number }
+
+function preferCloserFifths(fifths: number): number {
+  let f = fifths
+  if (f > 6) f -= 12
+  if (f < -6) f += 12
+  return Math.max(-7, Math.min(7, f))
+}
+
+/** Detect key signature from note content (Krumhansl–Schmuckler + fewer accidentals bias). */
+export function detectKeySignature(notes: NoteEvent[]): KeySignature {
+  const hist = new Array(12).fill(0)
+  let total = 0
+  for (const note of notes) {
+    const dur = Math.max(0.04, note.end - note.start)
+    const w = dur * (0.55 + (note.velocity || 80) / 200)
+    const pc = ((Math.round(note.midi) % 12) + 12) % 12
+    hist[pc] += w
+    total += w
+  }
+  if (total < 0.01) return { fifths: 0, mode: 'major', tonicPc: 0 }
+
+  let best: KeySignature & { score: number } = {
+    fifths: 0,
+    mode: 'major',
+    tonicPc: 0,
+    score: -Infinity,
+  }
+  for (let tonic = 0; tonic < 12; tonic++) {
+    for (const mode of ['major', 'minor'] as const) {
+      const profile = mode === 'major' ? KS_MAJOR : KS_MINOR
+      let corr = 0
+      for (let i = 0; i < 12; i++) {
+        corr += hist[i] * profile[(i - tonic + 12) % 12]
+      }
+      const relMajor = mode === 'major' ? tonic : (tonic + 3) % 12
+      const fifths = preferCloserFifths(MAJOR_FIFTHS[relMajor])
+      const score = corr / total - Math.abs(fifths) * 0.08
+      if (score > best.score) best = { fifths, mode, tonicPc: tonic, score }
+    }
+  }
+  return { fifths: best.fifths, mode: best.mode, tonicPc: best.tonicPc }
+}
+
+function alteredPcs(fifths: number): Set<number> {
+  const set = new Set<number>()
+  if (fifths > 0) {
+    for (let i = 0; i < fifths; i++) set.add(SHARP_ORDER[i])
+  } else if (fifths < 0) {
+    for (let i = 0; i < -fifths; i++) set.add(FLAT_ORDER[i])
+  }
+  return set
+}
+
+function diatonicFromC0(midi: number, fifths: number): number {
   const m = Math.max(12, Math.min(108, Math.round(midi)))
   const octave = Math.floor(m / 12) - 1
   const pc = ((m % 12) + 12) % 12
-  return octave * 7 + LETTER_STEPS[pc]
+  const steps = fifths < 0 ? LETTER_STEPS_FLAT[pc] : LETTER_STEPS_SHARP[pc]
+  return octave * 7 + steps
 }
 
-function isSharp(midi: number): boolean {
+/** Accidental to draw beside a note head (null if covered by the key signature). */
+function noteAccidental(midi: number, fifths: number): '#' | 'b' | null {
   const pc = ((Math.round(midi) % 12) + 12) % 12
-  return SHARP_PC[pc]
+  const keyed = alteredPcs(fifths)
+  if (fifths < 0) {
+    if (!FLAT_BLACK_PC[pc]) return null
+    return keyed.has(pc) ? null : 'b'
+  }
+  if (!SHARP_PC[pc]) return null
+  return keyed.has(pc) ? null : '#'
 }
 
-function pitchY(midi: number, clef: 'treble' | 'bass', staffTop: number, gap: number): number {
-  const ref = clef === 'treble' ? diatonicFromC0(64) : diatonicFromC0(43)
-  const steps = diatonicFromC0(midi) - ref
+function pitchY(
+  midi: number,
+  clef: 'treble' | 'bass',
+  staffTop: number,
+  gap: number,
+  fifths: number,
+): number {
+  const refMidi = clef === 'treble' ? 64 : 43
+  const steps = diatonicFromC0(midi, fifths) - diatonicFromC0(refMidi, fifths)
   return staffTop + 4 * gap - steps * (gap / 2)
 }
 
-function needsLedger(midi: number, clef: 'treble' | 'bass'): number[] {
+function needsLedger(midi: number, clef: 'treble' | 'bass', fifths: number): number[] {
   const yRef = clef === 'treble' ? 64 : 43
   const topRef = clef === 'treble' ? 77 : 57
-  const d = diatonicFromC0(midi)
-  const dLo = diatonicFromC0(yRef)
-  const dHi = diatonicFromC0(topRef)
+  const d = diatonicFromC0(midi, fifths)
+  const dLo = diatonicFromC0(yRef, fifths)
+  const dHi = diatonicFromC0(topRef, fifths)
   const lines: number[] = []
   if (d < dLo) {
     for (let s = dLo - 2; s >= d; s -= 2) lines.push(s)
@@ -47,24 +178,28 @@ type PageLayout = {
   topPad: number
   staffLeft: number
   staffRight: number
+  clefLeft: number
   contentLeft: number
   contentW: number
   measuresPerSystem: number
   systemSec: number
   pxPerSec: number
+  fifths: number
 }
 
-function pageLayout(w: number, keyboardTop: number): PageLayout {
+function pageLayout(w: number, keyboardTop: number, fifths: number): PageLayout {
   const areaH = Math.max(160, keyboardTop - 4)
   const staffLeft = 14
   const staffRight = w - 10
-  // Always four systems; leave headroom so the first starts lower on the page.
   const systems = 4
   const topPad = Math.max(28, Math.min(72, areaH * 0.12))
   const usableH = Math.max(120, areaH - topPad)
   const systemH = usableH / systems
   const gap = Math.max(4.2, Math.min(10, systemH / 14.5))
-  const contentLeft = staffLeft + Math.max(30, gap * 4.2)
+  const clefLeft = staffLeft + 4
+  const clefWidth = Math.max(28, gap * 3.6)
+  const keySigWidth = Math.abs(fifths) * gap * 0.78 + (fifths !== 0 ? gap * 0.35 : 0)
+  const contentLeft = clefLeft + clefWidth + keySigWidth
   const contentW = Math.max(80, staffRight - contentLeft)
   const measuresPerSystem = Math.max(2, Math.min(4, Math.round(contentW / Math.max(110, gap * 18))))
   const systemSec = measuresPerSystem * MEASURE_SEC
@@ -76,23 +211,25 @@ function pageLayout(w: number, keyboardTop: number): PageLayout {
     topPad,
     staffLeft,
     staffRight,
+    clefLeft,
     contentLeft,
     contentW,
     measuresPerSystem,
     systemSec,
     pxPerSec,
+    fifths,
   }
 }
 
-function drawStaff(
+function drawStaffLines(
   ctx: CanvasRenderingContext2D,
   top: number,
   gap: number,
   left: number,
   right: number,
-  clef: 'treble' | 'bass',
+  theme: SheetPalette,
 ) {
-  ctx.strokeStyle = 'rgba(20,20,20,0.85)'
+  ctx.strokeStyle = theme.staff
   ctx.lineWidth = 1.15
   for (let i = 0; i < 5; i++) {
     const y = top + i * gap
@@ -101,7 +238,17 @@ function drawStaff(
     ctx.lineTo(right, y)
     ctx.stroke()
   }
-  ctx.fillStyle = 'rgba(15,15,15,0.95)'
+}
+
+function drawClef(
+  ctx: CanvasRenderingContext2D,
+  top: number,
+  gap: number,
+  left: number,
+  clef: 'treble' | 'bass',
+  theme: SheetPalette,
+) {
+  ctx.fillStyle = theme.ink
   const glyph = clef === 'treble' ? '𝄞' : '𝄢'
   const fallback = clef === 'treble' ? 'G' : 'F'
   ctx.font = `700 ${Math.round(gap * (clef === 'treble' ? 3.4 : 3))}px "Times New Roman", Georgia, serif`
@@ -114,9 +261,46 @@ function drawStaff(
   ctx.fillText(mark, left + 2, top + gap * 2)
 }
 
-function drawBrace(ctx: CanvasRenderingContext2D, x: number, trebleTop: number, bassBottom: number) {
+function drawKeySignature(
+  ctx: CanvasRenderingContext2D,
+  staffTop: number,
+  gap: number,
+  startX: number,
+  clef: 'treble' | 'bass',
+  fifths: number,
+  theme: SheetPalette,
+) {
+  const count = Math.abs(fifths)
+  if (count === 0) return
+  const sharp = fifths > 0
+  const midis = sharp
+    ? clef === 'treble'
+      ? TREBLE_SHARP_MIDI
+      : BASS_SHARP_MIDI
+    : clef === 'treble'
+      ? TREBLE_FLAT_MIDI
+      : BASS_FLAT_MIDI
+  const mark = sharp ? '#' : '♭'
+  ctx.fillStyle = theme.ink
+  ctx.font = `700 ${Math.round(gap * (sharp ? 1.55 : 1.7))}px "Times New Roman", Georgia, serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  for (let i = 0; i < count; i++) {
+    const x = startX + i * gap * 0.78
+    const y = pitchY(midis[i], clef, staffTop, gap, fifths)
+    ctx.fillText(mark, x, y + (sharp ? 0 : gap * 0.05))
+  }
+}
+
+function drawBrace(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  trebleTop: number,
+  bassBottom: number,
+  theme: SheetPalette,
+) {
   const mid = (trebleTop + bassBottom) / 2
-  ctx.strokeStyle = 'rgba(15,15,15,0.92)'
+  ctx.strokeStyle = theme.ink
   ctx.lineWidth = 2.2
   ctx.beginPath()
   ctx.moveTo(x + 9, trebleTop)
@@ -132,12 +316,14 @@ function drawLedger(
   clef: 'treble' | 'bass',
   staffTop: number,
   gap: number,
+  fifths: number,
+  theme: SheetPalette,
 ) {
   const ref = clef === 'treble' ? 64 : 43
-  ctx.strokeStyle = 'rgba(20,20,20,0.8)'
+  ctx.strokeStyle = theme.staff
   ctx.lineWidth = 1.1
-  for (const step of needsLedger(midi, clef)) {
-    const y = staffTop + 4 * gap - (step - diatonicFromC0(ref)) * (gap / 2)
+  for (const step of needsLedger(midi, clef, fifths)) {
+    const y = staffTop + 4 * gap - (step - diatonicFromC0(ref, fifths)) * (gap / 2)
     ctx.beginPath()
     ctx.moveTo(x - gap * 0.9, y)
     ctx.lineTo(x + gap * 0.9, y)
@@ -152,31 +338,32 @@ function drawNoteHead(
   gap: number,
   color: [number, number, number],
   active: boolean,
-  sharp: boolean,
+  accidental: '#' | 'b' | null,
   label: string | null,
+  theme: SheetPalette,
 ) {
   const rw = gap * 0.68
   const rh = gap * 0.45
-  // Hand tint kept, but ink-dark on white paper.
+  const scale = theme.noteInkScale
   const ink: [number, number, number] = [
-    Math.round(color[0] * 0.42),
-    Math.round(color[1] * 0.42),
-    Math.round(color[2] * 0.42),
+    Math.round(color[0] * scale),
+    Math.round(color[1] * scale),
+    Math.round(color[2] * scale),
   ]
-  if (sharp) {
+  if (accidental) {
     ctx.fillStyle = rgba(ink, active ? 1 : 0.9)
-    ctx.font = `700 ${Math.round(gap * 1.25)}px system-ui, sans-serif`
+    ctx.font = `700 ${Math.round(gap * 1.25)}px "Times New Roman", Georgia, serif`
     ctx.textAlign = 'right'
     ctx.textBaseline = 'middle'
-    ctx.fillText('#', x - rw - 1, y)
+    ctx.fillText(accidental === 'b' ? '♭' : '#', x - rw - 1, y)
   }
   ctx.beginPath()
   ctx.ellipse(x, y, rw, rh, -0.35, 0, Math.PI * 2)
   ctx.fillStyle = rgba(ink, active ? 1 : 0.88)
   ctx.fill()
   if (active) {
-    ctx.strokeStyle = rgba(color, 0.95)
-    ctx.lineWidth = 1.6
+    ctx.strokeStyle = theme.noteInkScale < 1 ? rgba(color, 0.95) : theme.activeRing
+    ctx.lineWidth = theme.noteInkScale < 1 ? 1.6 : 1.3
     ctx.stroke()
   }
   ctx.strokeStyle = rgba(ink, active ? 1 : 0.85)
@@ -186,7 +373,7 @@ function drawNoteHead(
   ctx.lineTo(x + rw * 0.78, y - gap * 2.4)
   ctx.stroke()
   if (label) {
-    ctx.fillStyle = 'rgba(20,20,20,0.9)'
+    ctx.fillStyle = theme.label
     ctx.font = `600 ${Math.max(8, Math.round(gap * 0.8))}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'
@@ -200,22 +387,38 @@ function drawSystemFrame(
   layout: PageLayout,
   systemIndex: number,
   active: boolean,
+  theme: SheetPalette,
 ) {
-  const { gap, staffLeft, staffRight, contentLeft, contentW, measuresPerSystem, systemSec } = layout
+  const {
+    gap,
+    staffLeft,
+    staffRight,
+    clefLeft,
+    contentLeft,
+    contentW,
+    measuresPerSystem,
+    systemSec,
+    fifths,
+  } = layout
   const trebleTop = originY + gap * 0.85
   const bassTop = trebleTop + gap * 4 + gap * 2.6
   const bassBottom = bassTop + gap * 4
+  const keySigX = clefLeft + Math.max(28, gap * 3.6)
 
   if (active) {
-    ctx.fillStyle = 'rgba(255,122,50,0.08)'
+    ctx.fillStyle = theme.activeWash
     ctx.fillRect(staffLeft - 4, originY, staffRight - staffLeft + 8, bassBottom - originY + gap * 0.8)
   }
 
-  drawBrace(ctx, staffLeft - 2, trebleTop, bassBottom)
-  drawStaff(ctx, trebleTop, gap, contentLeft - 26, staffRight, 'treble')
-  drawStaff(ctx, bassTop, gap, contentLeft - 26, staffRight, 'bass')
+  drawBrace(ctx, staffLeft - 2, trebleTop, bassBottom, theme)
+  drawStaffLines(ctx, trebleTop, gap, staffLeft + 8, staffRight, theme)
+  drawStaffLines(ctx, bassTop, gap, staffLeft + 8, staffRight, theme)
+  drawClef(ctx, trebleTop, gap, clefLeft, 'treble', theme)
+  drawClef(ctx, bassTop, gap, clefLeft, 'bass', theme)
+  drawKeySignature(ctx, trebleTop, gap, keySigX, 'treble', fifths, theme)
+  drawKeySignature(ctx, bassTop, gap, keySigX, 'bass', fifths, theme)
 
-  ctx.strokeStyle = 'rgba(30,30,30,0.22)'
+  ctx.strokeStyle = theme.barSoft
   ctx.lineWidth = 1
   for (let m = 1; m < measuresPerSystem; m++) {
     const x = contentLeft + (m / measuresPerSystem) * contentW
@@ -225,8 +428,7 @@ function drawSystemFrame(
     ctx.stroke()
   }
 
-  // Right barline
-  ctx.strokeStyle = 'rgba(20,20,20,0.75)'
+  ctx.strokeStyle = theme.barStrong
   ctx.beginPath()
   ctx.moveTo(staffRight, trebleTop)
   ctx.lineTo(staffRight, bassBottom)
@@ -247,10 +449,23 @@ export function drawScrollingSheet(
   w: number,
   keyboardTop: number,
   showNames: boolean,
+  sheetTheme: SheetTheme = 'light',
 ) {
-  const layout = pageLayout(w, keyboardTop)
-  const { gap, systems, systemH, topPad, contentLeft, contentW, systemSec, pxPerSec, staffRight } =
-    layout
+  const theme = THEMES[sheetTheme === 'dark' ? 'dark' : 'light']
+  const key = detectKeySignature(notes)
+  const layout = pageLayout(w, keyboardTop, key.fifths)
+  const {
+    gap,
+    systems,
+    systemH,
+    topPad,
+    contentLeft,
+    contentW,
+    systemSec,
+    pxPerSec,
+    staffRight,
+    fifths,
+  } = layout
 
   const t = Math.max(0, time)
   const currentSystem = Math.floor(t / systemSec)
@@ -265,7 +480,7 @@ export function drawScrollingSheet(
   ctx.rect(0, 0, w, keyboardTop)
   ctx.clip()
 
-  ctx.fillStyle = '#f7f4ee'
+  ctx.fillStyle = theme.page
   ctx.fillRect(0, 0, w, keyboardTop)
 
   for (let row = 0; row < systems; row++) {
@@ -274,7 +489,7 @@ export function drawScrollingSheet(
     const originY = topPad + row * systemH
     if (originY > keyboardTop) continue
 
-    const frame = drawSystemFrame(ctx, originY, layout, systemIndex, row === cursorRow)
+    const frame = drawSystemFrame(ctx, originY, layout, systemIndex, row === cursorRow, theme)
     const systemStart = frame.systemStart
     const systemEnd = systemStart + systemSec
 
@@ -287,11 +502,11 @@ export function drawScrollingSheet(
       const x = contentLeft + (startClamped - systemStart) * pxPerSec
       const xEnd = contentLeft + (endClamped - systemStart) * pxPerSec
       if (x > staffRight + 10 || xEnd < contentLeft - 10) continue
-      const y = pitchY(note.midi, clef, staffTop, gap)
+      const y = pitchY(note.midi, clef, staffTop, gap, fifths)
       const active = time >= note.start && time < note.end
-      drawLedger(ctx, x, note.midi, clef, staffTop, gap)
+      drawLedger(ctx, x, note.midi, clef, staffTop, gap, fifths, theme)
       if (xEnd > x + gap * 0.6) {
-        ctx.fillStyle = rgba(note.color, active ? 0.22 : 0.12)
+        ctx.fillStyle = rgba(note.color, active ? theme.sustainActive : theme.sustainIdle)
         ctx.fillRect(x, y - gap * 0.16, Math.min(staffRight, xEnd) - x, gap * 0.32)
       }
       if (note.start >= systemStart && note.start < systemEnd) {
@@ -302,8 +517,9 @@ export function drawScrollingSheet(
           gap,
           note.color,
           active,
-          isSharp(note.midi),
+          noteAccidental(note.midi, fifths),
           showNames ? noteLabel(note.midi, false) : null,
+          theme,
         )
       }
     }

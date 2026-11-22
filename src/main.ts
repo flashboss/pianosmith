@@ -16,6 +16,7 @@ import {
   KEYBOARD_MAX_MIDI,
   KEYBOARD_MIN_MIDI,
   Visualizer,
+  type SheetTheme,
   type ViewMode,
 } from './engine'
 import {
@@ -96,6 +97,8 @@ const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const viewFallingBtn = el<HTMLButtonElement>('view-falling')
 const viewSheetBtn = el<HTMLButtonElement>('view-sheet')
+const sheetThemeLightBtn = el<HTMLButtonElement>('sheet-theme-light')
+const sheetThemeDarkBtn = el<HTMLButtonElement>('sheet-theme-dark')
 const zoomBtn = el<HTMLButtonElement>('zoom')
 const audioBtn = el<HTMLButtonElement>('audio')
 const soundSourceBtn = el<HTMLButtonElement>('sound-source')
@@ -320,9 +323,27 @@ function applyViewMode(mode: ViewMode) {
   viewFallingBtn.setAttribute('aria-pressed', next === 'falling' ? 'true' : 'false')
   viewSheetBtn.setAttribute('aria-pressed', next === 'sheet' ? 'true' : 'false')
   localStorage.setItem('pianosmith.viewMode', next)
+  syncSheetThemeUi()
+}
+
+function applySheetTheme(theme: SheetTheme) {
+  const next: SheetTheme = theme === 'dark' ? 'dark' : 'light'
+  viz.setSheetTheme(next)
+  localStorage.setItem('pianosmith.sheetTheme', next)
+  syncSheetThemeUi()
+}
+
+function syncSheetThemeUi() {
+  const sheet = viz.getViewMode() === 'sheet'
+  const theme = viz.getSheetTheme()
+  sheetThemeLightBtn.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false')
+  sheetThemeDarkBtn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false')
+  sheetThemeLightBtn.disabled = !sheet
+  sheetThemeDarkBtn.disabled = !sheet
 }
 
 applyViewMode(localStorage.getItem('pianosmith.viewMode') === 'sheet' ? 'sheet' : 'falling')
+applySheetTheme(localStorage.getItem('pianosmith.sheetTheme') === 'dark' ? 'dark' : 'light')
 {
   const rawLo = localStorage.getItem('pianosmith.keyLo')
   const rawHi = localStorage.getItem('pianosmith.keyHi')
@@ -1830,6 +1851,8 @@ viewSheetBtn.addEventListener('click', () => {
   applyViewMode('sheet')
   fit()
 })
+sheetThemeLightBtn.addEventListener('click', () => applySheetTheme('light'))
+sheetThemeDarkBtn.addEventListener('click', () => applySheetTheme('dark'))
 
 zoomBtn.addEventListener('click', () => {
   const next = zoomBtn.getAttribute('aria-pressed') !== 'true'
