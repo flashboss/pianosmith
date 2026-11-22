@@ -97,6 +97,7 @@ const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
 const viewFallingBtn = el<HTMLButtonElement>('view-falling')
 const viewSheetBtn = el<HTMLButtonElement>('view-sheet')
+const sheetThemeBlock = el<HTMLElement>('sheet-theme-block')
 const sheetThemeLightBtn = el<HTMLButtonElement>('sheet-theme-light')
 const sheetThemeDarkBtn = el<HTMLButtonElement>('sheet-theme-dark')
 const zoomBtn = el<HTMLButtonElement>('zoom')
@@ -336,10 +337,9 @@ function applySheetTheme(theme: SheetTheme) {
 function syncSheetThemeUi() {
   const sheet = viz.getViewMode() === 'sheet'
   const theme = viz.getSheetTheme()
+  sheetThemeBlock.hidden = !sheet
   sheetThemeLightBtn.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false')
   sheetThemeDarkBtn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false')
-  sheetThemeLightBtn.disabled = !sheet
-  sheetThemeDarkBtn.disabled = !sheet
 }
 
 applyViewMode(localStorage.getItem('pianosmith.viewMode') === 'sheet' ? 'sheet' : 'falling')
@@ -2578,12 +2578,12 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
   // remote can reach every sibling (e.g. Opzioni ↔ Nuovo, bridge code → Send).
   if (dx !== 0 || dy !== 0) {
     const row = current.closest(
-      '.library-item, .settings-keys, .settings-grid, .library-toolbar, .library-sync-actions, .library-sync-bridge-row, #topbar > .row',
+      '.library-item, .library-path, .settings-keys, .settings-grid, .library-toolbar, .library-sync-actions, .library-sync-bridge-row, #topbar > .row',
     )
     if (row) {
       // Horizontal strips: Left/Right follow DOM order even when flex/grid wraps.
       const horizontalOnly = row.matches(
-        '#topbar > .row, .settings-keys, .settings-grid, .library-toolbar',
+        '#topbar > .row, .library-path, .settings-keys, .settings-grid, .library-toolbar',
       )
       if (!horizontalOnly || dx !== 0) {
         const rowItems = items.filter((node) => row.contains(node))
@@ -2607,6 +2607,31 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
       node.id === 'library-close' ||
       node.getAttribute('data-exit') === 'close',
   )
+
+  // Library path ↔ toolbar/list: spatial nav often stalls on the first crumb on Tizen.
+  if (dy > 0 && current.closest('.library-path')) {
+    const below =
+      items.find((node) => node.closest('.library-toolbar')) ??
+      items.find((node) => node.classList.contains('library-main'))
+    if (below) {
+      focusTvEl(below)
+      return
+    }
+  }
+  if (dy < 0 && current.classList.contains('library-main')) {
+    const toolbar = items.find((node) => node.closest('.library-toolbar'))
+    if (toolbar) {
+      focusTvEl(toolbar)
+      return
+    }
+  }
+  if (dy < 0 && (current.closest('.library-toolbar') || current.classList.contains('library-main'))) {
+    const crumbs = items.filter((node) => node.closest('.library-path'))
+    if (crumbs.length) {
+      focusTvEl(crumbs[crumbs.length - 1])
+      return
+    }
+  }
 
   // Modal × is top-right; spatial Up from the left column often misses it.
   if (dy < 0 && overlayClose && current !== overlayClose) {
@@ -2662,8 +2687,12 @@ function moveTvFocus(dx: number, dy: number, fromEl?: HTMLElement | null) {
   else if (dx !== 0) {
     const index = items.indexOf(current)
     focusTvEl(items[(index + dx + items.length) % items.length])
-  } else if (dy < 0 && overlayClose && current !== overlayClose) {
-    focusTvEl(overlayClose)
+  } else if (dy !== 0) {
+    // Spatial miss (common with transformed modal cards on Tizen): step in DOM order.
+    const index = items.indexOf(current)
+    const fallback = items[index + dy]
+    if (fallback) focusTvEl(fallback)
+    else if (dy < 0 && overlayClose && current !== overlayClose) focusTvEl(overlayClose)
   }
 }
 
