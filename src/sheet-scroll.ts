@@ -443,26 +443,38 @@ function drawRest(
     ctx.fill()
     dotY = mid
   } else {
-    // Eighth / sixteenth: stem + curved flag(s) + filled head.
+    // Eighth / sixteenth: filled head(s) on top + curved stem (not a letter “p”).
     const flags = dur === '16' ? 2 : 1
-    const top = mid - gap * 1.05
-    const bot = mid + gap * 0.85
-    ctx.lineWidth = Math.max(1.4, gap * 0.15)
+    const headR = gap * 0.26
+    ctx.lineWidth = Math.max(1.6, gap * 0.17)
+    // Shared stem from first head down-right.
+    const stemTop = mid - gap * (flags === 1 ? 0.55 : 0.85)
+    const stemBot = mid + gap * (flags === 1 ? 1.15 : 1.35)
     ctx.beginPath()
-    ctx.moveTo(x, top)
-    ctx.lineTo(x, bot)
+    ctx.moveTo(x + headR * 0.35, stemTop + headR * 0.15)
+    ctx.bezierCurveTo(
+      x + gap * 0.75,
+      stemTop + gap * 0.45,
+      x + gap * 0.55,
+      stemBot - gap * 0.35,
+      x + gap * 0.12,
+      stemBot,
+    )
     ctx.stroke()
     for (let i = 0; i < flags; i++) {
-      const y0 = top + i * gap * 0.55
+      const hy = stemTop + i * gap * 0.62
+      const hx = x - gap * 0.02
       ctx.beginPath()
-      ctx.moveTo(x, y0)
-      ctx.bezierCurveTo(x + gap * 0.95, y0 + gap * 0.1, x + gap * 0.85, y0 + gap * 0.75, x + gap * 0.15, y0 + gap * 0.95)
-      ctx.lineWidth = Math.max(1.5, gap * 0.16)
-      ctx.stroke()
+      ctx.ellipse(hx, hy, headR * 1.1, headR * 0.88, -0.55, 0, Math.PI * 2)
+      ctx.fill()
+      // Short hook from each head into the stem.
+      if (i > 0) {
+        ctx.beginPath()
+        ctx.moveTo(hx + headR * 0.45, hy)
+        ctx.quadraticCurveTo(x + gap * 0.45, hy + gap * 0.2, x + gap * 0.35, hy + gap * 0.45)
+        ctx.stroke()
+      }
     }
-    ctx.beginPath()
-    ctx.ellipse(x, bot, gap * 0.22, gap * 0.18, 0, 0, Math.PI * 2)
-    ctx.fill()
     dotY = mid
   }
 
@@ -591,9 +603,13 @@ function drawRhythmStaff(
   const drawn: DrawnNote[] = []
   const rw = gap * 0.62
   const rh = gap * 0.4
+  // Keep the first note/rest clear of the left barline (and a little room on the right).
+  const padL = Math.max(gap * 1.25, measureW * 0.1)
+  const padR = Math.max(gap * 0.55, measureW * 0.045)
+  const innerW = Math.max(gap * 4, measureW - padL - padR)
 
   for (const event of events) {
-    const x = measureX + (event.tick / measureTicks) * measureW + measureW / measureTicks * 0.15
+    const x = measureX + padL + (event.tick / measureTicks) * innerW
     const startT = measureStart + event.tick * grid
     const endT = startT + event.ticks * grid
     const active = time >= startT && time < endT
