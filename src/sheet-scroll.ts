@@ -1,3 +1,12 @@
+import {
+  detectTimeSignature,
+  estimateBpm,
+  measureSeconds,
+  measureSixteenthTicks,
+  tempoLabel,
+  type TimeSignature,
+} from './meter'
+import { groupChords, rhythmEventsForMeasure, type RhythmDur, type RhythmEvent } from './rhythm'
 import type { NoteEvent } from './types'
 import { noteLabel, rgba } from './theory'
 
@@ -21,7 +30,7 @@ type SheetPalette = {
 
 const THEMES: Record<SheetTheme, SheetPalette> = {
   light: {
-    page: '#f7f4ee',
+    page: '#ffffff',
     staff: 'rgba(20,20,20,0.85)',
     ink: 'rgba(15,15,15,0.95)',
     barSoft: 'rgba(30,30,30,0.22)',
@@ -54,7 +63,6 @@ const LETTER_STEPS_FLAT = [0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6] as const
 const SHARP_PC = [false, true, false, true, false, false, true, false, true, false, true, false]
 /** Black keys spelled as flats: Db Eb Gb Ab Bb */
 const FLAT_BLACK_PC = [false, true, false, true, false, false, true, false, true, false, true, false]
-const MEASURE_SEC = 2.4
 
 /** Order of sharps / flats in a key signature. */
 const SHARP_ORDER = [5, 0, 7, 2, 9, 4, 11] as const // F C G D A E B
@@ -182,27 +190,44 @@ type PageLayout = {
   contentLeft: number
   contentW: number
   measuresPerSystem: number
+  measureSec: number
   systemSec: number
   pxPerSec: number
   fifths: number
+  bpm: number
+  timeSig: TimeSignature
+  timeSigX: number
 }
 
-function pageLayout(w: number, keyboardTop: number, fifths: number): PageLayout {
-  const areaH = Math.max(160, keyboardTop - 4)
+function pageLayout(
+  w: number,
+  areaH: number,
+  fifths: number,
+  bpm: number,
+  timeSig: TimeSignature,
+  systems: number,
+): PageLayout {
+  const height = Math.max(160, areaH)
   const staffLeft = 14
   const staffRight = w - 10
-  const systems = 4
-  const topPad = Math.max(28, Math.min(72, areaH * 0.12))
-  const usableH = Math.max(120, areaH - topPad)
-  const systemH = usableH / systems
+  const topPad = Math.max(34, Math.min(78, height * 0.14))
+  const usableH = Math.max(120, height - topPad)
+  const systemH = usableH / Math.max(1, systems)
   const gap = Math.max(4.2, Math.min(10, systemH / 14.5))
   const clefLeft = staffLeft + 4
   const clefWidth = Math.max(28, gap * 3.6)
   const keySigWidth = Math.abs(fifths) * gap * 0.78 + (fifths !== 0 ? gap * 0.35 : 0)
-  const contentLeft = clefLeft + clefWidth + keySigWidth
+  const timeSigX = clefLeft + clefWidth + keySigWidth
+  const timeSigWidth = gap * 2.4
+  const contentLeft = timeSigX + timeSigWidth
   const contentW = Math.max(80, staffRight - contentLeft)
-  const measuresPerSystem = Math.max(2, Math.min(4, Math.round(contentW / Math.max(110, gap * 18))))
-  const systemSec = measuresPerSystem * MEASURE_SEC
+  const measureSec = measureSeconds(bpm, timeSig)
+  // Prefer ~measure-width that stays readable while packing 2–4 bars per system.
+  const measuresPerSystem = Math.max(
+    2,
+    Math.min(4, Math.round(contentW / Math.max(100, gap * 16 + measureSec * 18))),
+  )
+  const systemSec = measuresPerSystem * measureSec
   const pxPerSec = contentW / systemSec
   return {
     gap,
@@ -215,9 +240,13 @@ function pageLayout(w: number, keyboardTop: number, fifths: number): PageLayout 
     contentLeft,
     contentW,
     measuresPerSystem,
+    measureSec,
     systemSec,
     pxPerSec,
     fifths,
+    bpm,
+    timeSig,
+    timeSigX,
   }
 }
 
@@ -292,6 +321,39 @@ function drawKeySignature(
   }
 }
 
+/** Stacked meter numbers (e.g. 3/4, 6/8). */
+function drawTimeSignature(
+  ctx: CanvasRenderingContext2D,
+  staffTop: number,
+  gap: number,
+  x: number,
+  timeSig: TimeSignature,
+  theme: SheetPalette,
+) {
+  ctx.fillStyle = theme.ink
+  ctx.font = `700 ${Math.round(gap * 2.05)}px "Times New Roman", Georgia, serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(String(timeSig.numerator), x, staffTop + gap * 1)
+  ctx.fillText(String(timeSig.denominator), x, staffTop + gap * 3)
+}
+
+function drawTempoMark(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  bpm: number,
+  theme: SheetPalette,
+  gap: number,
+) {
+  const label = `${tempoLabel(bpm)}  ♩ = ${bpm}`
+  ctx.fillStyle = theme.ink
+  ctx.font = `italic 600 ${Math.max(11, Math.round(gap * 1.35))}px "Times New Roman", Georgia, serif`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'bottom'
+  ctx.fillText(label, x, y)
+}
+
 function drawBrace(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -331,54 +393,292 @@ function drawLedger(
   }
 }
 
-function drawNoteHead(
+function inkColor(color: [number, number, number], theme: SheetPalette): [number, number, number] {
+  const scale = theme.noteInkScale
+  return [Math.round(color[0] * scale), Math.round(color[1] * scale), Math.round(color[2] * scale)]
+}
+
+function restGlyph(dur: RhythmDur): string {
+  switch (dur) {
+    case 'w':
+      return '𝄻'
+    case 'h':
+      return '𝄼'
+    case 'q':
+      return '𝄽'
+    case '8':
+      return '𝄾'
+    case '16':
+      return '𝄿'
+  }
+}
+
+function drawRest(
   ctx: CanvasRenderingContext2D,
   x: number,
-  y: number,
+  staffTop: number,
   gap: number,
-  color: [number, number, number],
+  dur: RhythmDur,
+  dots: number,
   active: boolean,
-  accidental: '#' | 'b' | null,
-  label: string | null,
   theme: SheetPalette,
 ) {
-  const rw = gap * 0.68
-  const rh = gap * 0.45
-  const scale = theme.noteInkScale
-  const ink: [number, number, number] = [
-    Math.round(color[0] * scale),
-    Math.round(color[1] * scale),
-    Math.round(color[2] * scale),
-  ]
-  if (accidental) {
-    ctx.fillStyle = rgba(ink, active ? 1 : 0.9)
-    ctx.font = `700 ${Math.round(gap * 1.25)}px "Times New Roman", Georgia, serif`
-    ctx.textAlign = 'right'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(accidental === 'b' ? '♭' : '#', x - rw - 1, y)
+  const y =
+    dur === 'w'
+      ? staffTop + gap * 1.15
+      : dur === 'h'
+        ? staffTop + gap * 2
+        : staffTop + gap * 2
+  ctx.fillStyle = rgba(
+    theme.noteInkScale < 1 ? [30, 30, 30] : [235, 235, 235],
+    active ? 1 : 0.88,
+  )
+  ctx.font = `700 ${Math.round(gap * (dur === 'q' || dur === '8' || dur === '16' ? 2.4 : 1.7))}px "Times New Roman", Georgia, serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const mark = restGlyph(dur)
+  // Fallback ASCII-ish marks if music glyphs missing.
+  if (ctx.measureText(mark).width < gap * 0.2) {
+    ctx.font = `700 ${Math.round(gap * 1.4)}px system-ui, sans-serif`
+    const fallback = dur === 'w' ? '—' : dur === 'h' ? '▬' : dur === 'q' ? '𝄽' : '♪'
+    ctx.fillText(fallback, x, y)
+  } else {
+    ctx.fillText(mark, x, y)
   }
-  ctx.beginPath()
-  ctx.ellipse(x, y, rw, rh, -0.35, 0, Math.PI * 2)
-  ctx.fillStyle = rgba(ink, active ? 1 : 0.88)
-  ctx.fill()
-  if (active) {
-    ctx.strokeStyle = theme.noteInkScale < 1 ? rgba(color, 0.95) : theme.activeRing
-    ctx.lineWidth = theme.noteInkScale < 1 ? 1.6 : 1.3
+  for (let i = 0; i < dots; i++) {
+    ctx.beginPath()
+    ctx.arc(x + gap * 0.85 + i * gap * 0.35, y, Math.max(1.2, gap * 0.12), 0, Math.PI * 2)
+    ctx.fill()
+  }
+}
+
+function drawFlags(
+  ctx: CanvasRenderingContext2D,
+  stemX: number,
+  stemTipY: number,
+  up: boolean,
+  dur: RhythmDur,
+  gap: number,
+  ink: [number, number, number],
+) {
+  const count = dur === '16' ? 2 : dur === '8' ? 1 : 0
+  if (!count) return
+  ctx.strokeStyle = rgba(ink, 0.95)
+  ctx.lineWidth = Math.max(1.2, gap * 0.14)
+  ctx.lineCap = 'round'
+  for (let i = 0; i < count; i++) {
+    const y0 = stemTipY + (up ? 1 : -1) * i * gap * 0.45
+    const y1 = y0 + (up ? 1 : -1) * gap * 0.95
+    ctx.beginPath()
+    ctx.moveTo(stemX, y0)
+    ctx.quadraticCurveTo(
+      stemX + (up ? 1 : -1) * gap * 1.05,
+      y0 + (up ? 1 : -1) * gap * 0.35,
+      stemX + (up ? 1 : -1) * gap * 0.15,
+      y1,
+    )
     ctx.stroke()
   }
-  ctx.strokeStyle = rgba(ink, active ? 1 : 0.85)
-  ctx.lineWidth = 1.25
+}
+
+function drawBeamGroup(
+  ctx: CanvasRenderingContext2D,
+  points: Array<{ stemX: number; tipY: number; dur: RhythmDur }>,
+  up: boolean,
+  gap: number,
+  ink: [number, number, number],
+) {
+  if (points.length < 2) return
+  const y0 = points[0].tipY
+  const y1 = points[points.length - 1].tipY
+  ctx.strokeStyle = rgba(ink, 0.95)
+  ctx.lineWidth = Math.max(2.2, gap * 0.28)
+  ctx.lineCap = 'butt'
   ctx.beginPath()
-  ctx.moveTo(x + rw * 0.78, y)
-  ctx.lineTo(x + rw * 0.78, y - gap * 2.4)
+  ctx.moveTo(points[0].stemX, y0)
+  ctx.lineTo(points[points.length - 1].stemX, y1)
   ctx.stroke()
-  if (label) {
-    ctx.fillStyle = theme.label
-    ctx.font = `600 ${Math.max(8, Math.round(gap * 0.8))}px system-ui, sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'bottom'
-    ctx.fillText(label, x, y - rh - 1)
+  // Second beam for sixteenths
+  if (points.some((p) => p.dur === '16')) {
+    const offset = (up ? 1 : -1) * gap * 0.38
+    ctx.lineWidth = Math.max(1.6, gap * 0.2)
+    ctx.beginPath()
+    let started = false
+    for (let i = 0; i < points.length; i++) {
+      if (points[i].dur !== '16') {
+        started = false
+        continue
+      }
+      // Interpolate along the main beam, offset for the 16th beam.
+      const t = i / Math.max(1, points.length - 1)
+      const by = y0 + (y1 - y0) * t + offset
+      if (!started) {
+        ctx.moveTo(points[i].stemX, by)
+        started = true
+      } else {
+        ctx.lineTo(points[i].stemX, by)
+      }
+    }
+    ctx.stroke()
   }
+}
+
+type DrawnNote = {
+  event: RhythmEvent
+  x: number
+  ys: number[]
+  stemUp: boolean
+  stemX: number
+  tipY: number
+  active: boolean
+  ink: [number, number, number]
+}
+
+function drawRhythmStaff(
+  ctx: CanvasRenderingContext2D,
+  events: RhythmEvent[],
+  opts: {
+    clef: 'treble' | 'bass'
+    staffTop: number
+    gap: number
+    fifths: number
+    measureX: number
+    measureW: number
+    measureTicks: number
+    measureStart: number
+    beat: number
+    time: number
+    showNames: boolean
+    theme: SheetPalette
+  },
+) {
+  const {
+    clef,
+    staffTop,
+    gap,
+    fifths,
+    measureX,
+    measureW,
+    measureTicks,
+    measureStart,
+    beat,
+    time,
+    showNames,
+    theme,
+  } = opts
+  const grid = beat / 4
+  const drawn: DrawnNote[] = []
+  const rw = gap * 0.62
+  const rh = gap * 0.4
+
+  for (const event of events) {
+    const x = measureX + (event.tick / measureTicks) * measureW + measureW / measureTicks * 0.15
+    const startT = measureStart + event.tick * grid
+    const endT = startT + event.ticks * grid
+    const active = time >= startT && time < endT
+
+    if (!event.midis || event.midis.length === 0) {
+      drawRest(ctx, x, staffTop, gap, event.dur, event.dots, active, theme)
+      continue
+    }
+
+    const color = event.color ?? [200, 120, 80]
+    const ink = inkColor(color, theme)
+    const ys = event.midis.map((midi) => pitchY(midi, clef, staffTop, gap, fifths))
+    const midY = (Math.min(...ys) + Math.max(...ys)) / 2
+    const stemUp = midY >= staffTop + gap * 2
+    const stemX = stemUp ? x + rw * 0.78 : x - rw * 0.78
+    const extremeY = stemUp ? Math.min(...ys) : Math.max(...ys)
+    const tipY = extremeY + (stemUp ? -gap * 2.55 : gap * 2.55)
+
+    for (let i = 0; i < event.midis.length; i++) {
+      const midi = event.midis[i]
+      const y = ys[i]
+      drawLedger(ctx, x, midi, clef, staffTop, gap, fifths, theme)
+      const accidental = noteAccidental(midi, fifths)
+      if (accidental) {
+        ctx.fillStyle = rgba(ink, active ? 1 : 0.9)
+        ctx.font = `700 ${Math.round(gap * 1.25)}px "Times New Roman", Georgia, serif`
+        ctx.textAlign = 'right'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(accidental === 'b' ? '♭' : '#', x - rw - 2, y)
+      }
+      ctx.beginPath()
+      ctx.ellipse(x, y, rw, rh, -0.35, 0, Math.PI * 2)
+      const open = event.dur === 'w' || event.dur === 'h'
+      if (open) {
+        ctx.strokeStyle = rgba(ink, active ? 1 : 0.9)
+        ctx.lineWidth = Math.max(1.4, gap * 0.16)
+        ctx.stroke()
+        if (event.dur === 'w') {
+          // Whole notes have no stem; slightly thicker oval.
+        }
+      } else {
+        ctx.fillStyle = rgba(ink, active ? 1 : 0.9)
+        ctx.fill()
+      }
+      if (active) {
+        ctx.strokeStyle = theme.noteInkScale < 1 ? rgba(color, 0.95) : theme.activeRing
+        ctx.lineWidth = 1.4
+        ctx.stroke()
+      }
+      if (showNames) {
+        ctx.fillStyle = theme.label
+        ctx.font = `600 ${Math.max(8, Math.round(gap * 0.75))}px system-ui, sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'bottom'
+        ctx.fillText(noteLabel(midi, false), x, y - rh - 1)
+      }
+    }
+
+    for (let d = 0; d < event.dots; d++) {
+      const dy = ys[ys.length - 1]
+      ctx.fillStyle = rgba(ink, 0.95)
+      ctx.beginPath()
+      ctx.arc(x + rw + gap * 0.35 + d * gap * 0.32, dy, Math.max(1.2, gap * 0.12), 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    if (event.dur !== 'w') {
+      ctx.strokeStyle = rgba(ink, 0.95)
+      ctx.lineWidth = Math.max(1.15, gap * 0.12)
+      ctx.beginPath()
+      // Stem from the far side of the chord toward the tip.
+      const fromY = stemUp ? Math.max(...ys) : Math.min(...ys)
+      ctx.moveTo(stemX, fromY)
+      ctx.lineTo(stemX, tipY)
+      ctx.stroke()
+    }
+
+    drawn.push({ event, x, ys, stemUp, stemX, tipY, active, ink })
+  }
+
+  // Beams for consecutive beamable notes with same stem direction.
+  let group: DrawnNote[] = []
+  const flush = () => {
+    if (group.length >= 2 && group.every((n) => n.stemUp === group[0].stemUp)) {
+      drawBeamGroup(
+        ctx,
+        group.map((n) => ({ stemX: n.stemX, tipY: n.tipY, dur: n.event.dur })),
+        group[0].stemUp,
+        gap,
+        group[0].ink,
+      )
+    } else if (group.length === 1) {
+      const n = group[0]
+      drawFlags(ctx, n.stemX, n.tipY, n.stemUp, n.event.dur, gap, n.ink)
+    } else {
+      for (const n of group) drawFlags(ctx, n.stemX, n.tipY, n.stemUp, n.event.dur, gap, n.ink)
+    }
+    group = []
+  }
+  for (const note of drawn) {
+    if (note.event.beamable) group.push(note)
+    else {
+      flush()
+    }
+  }
+  flush()
 }
 
 function drawSystemFrame(
@@ -388,6 +688,7 @@ function drawSystemFrame(
   systemIndex: number,
   active: boolean,
   theme: SheetPalette,
+  showTempo: boolean,
 ) {
   const {
     gap,
@@ -399,11 +700,16 @@ function drawSystemFrame(
     measuresPerSystem,
     systemSec,
     fifths,
+    bpm,
+    timeSig,
+    timeSigX,
   } = layout
   const trebleTop = originY + gap * 0.85
   const bassTop = trebleTop + gap * 4 + gap * 2.6
   const bassBottom = bassTop + gap * 4
   const keySigX = clefLeft + Math.max(28, gap * 3.6)
+  const measureW = contentW / measuresPerSystem
+  const firstMeasure = systemIndex * measuresPerSystem + 1
 
   if (active) {
     ctx.fillStyle = theme.activeWash
@@ -417,24 +723,158 @@ function drawSystemFrame(
   drawClef(ctx, bassTop, gap, clefLeft, 'bass', theme)
   drawKeySignature(ctx, trebleTop, gap, keySigX, 'treble', fifths, theme)
   drawKeySignature(ctx, bassTop, gap, keySigX, 'bass', fifths, theme)
+  drawTimeSignature(ctx, trebleTop, gap, timeSigX + gap * 0.95, timeSig, theme)
+  drawTimeSignature(ctx, bassTop, gap, timeSigX + gap * 0.95, timeSig, theme)
 
-  ctx.strokeStyle = theme.barSoft
-  ctx.lineWidth = 1
-  for (let m = 1; m < measuresPerSystem; m++) {
-    const x = contentLeft + (m / measuresPerSystem) * contentW
-    ctx.beginPath()
-    ctx.moveTo(x, trebleTop - gap * 0.25)
-    ctx.lineTo(x, bassBottom + gap * 0.25)
-    ctx.stroke()
+  if (showTempo) {
+    drawTempoMark(ctx, staffLeft + 6, trebleTop - gap * 0.55, bpm, theme, gap)
+  }
+
+  // Measure barlines + numbers (bars follow detected meter × BPM).
+  ctx.font = `600 ${Math.max(9, Math.round(gap * 1.05))}px "Times New Roman", Georgia, serif`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'bottom'
+  for (let m = 0; m < measuresPerSystem; m++) {
+    const x = contentLeft + m * measureW
+    if (m > 0) {
+      ctx.strokeStyle = theme.barStrong
+      ctx.lineWidth = 1.15
+      ctx.beginPath()
+      ctx.moveTo(x, trebleTop - gap * 0.25)
+      ctx.lineTo(x, bassBottom + gap * 0.25)
+      ctx.stroke()
+    }
+    ctx.fillStyle = theme.label
+    ctx.fillText(String(firstMeasure + m), x + 3, trebleTop - gap * 0.12)
   }
 
   ctx.strokeStyle = theme.barStrong
+  ctx.lineWidth = 1.35
   ctx.beginPath()
   ctx.moveTo(staffRight, trebleTop)
   ctx.lineTo(staffRight, bassBottom)
   ctx.stroke()
 
   return { trebleTop, bassTop, bassBottom, systemStart: systemIndex * systemSec }
+}
+
+type SheetModel = {
+  bpm: number
+  timeSig: TimeSignature
+  fifths: number
+  beat: number
+  measureTicks: number
+  rightChords: ReturnType<typeof groupChords>
+  leftChords: ReturnType<typeof groupChords>
+  tEnd: number
+}
+
+function buildSheetModel(notes: NoteEvent[]): SheetModel {
+  const key = detectKeySignature(notes)
+  const bpm = estimateBpm(notes)
+  const timeSig = detectTimeSignature(notes, bpm)
+  const beat = 60 / bpm
+  return {
+    bpm,
+    timeSig,
+    fifths: key.fifths,
+    beat,
+    measureTicks: measureSixteenthTicks(timeSig),
+    rightChords: groupChords(notes, 'right', beat),
+    leftChords: groupChords(notes, 'left', beat),
+    tEnd: notes.length ? Math.max(...notes.map((note) => note.end)) : 0,
+  }
+}
+
+function drawSystemsBlock(
+  ctx: CanvasRenderingContext2D,
+  model: SheetModel,
+  layout: PageLayout,
+  opts: {
+    firstSystem: number
+    rows: number
+    showNames: boolean
+    theme: SheetPalette
+    playTime: number | null
+    highlightCursor: boolean
+  },
+) {
+  const { gap, topPad, systemH, contentLeft, contentW, measuresPerSystem, measureSec, systemSec, fifths } =
+    layout
+  const { bpm: _bpm, timeSig, beat, measureTicks, rightChords, leftChords } = model
+  void _bpm
+  const measureW = contentW / measuresPerSystem
+  const time = opts.playTime
+  const currentSystem = time == null ? -1 : Math.floor(Math.max(0, time) / systemSec)
+  const frac = time == null ? 0 : Math.max(0, time) / systemSec - currentSystem
+
+  for (let row = 0; row < opts.rows; row++) {
+    const systemIndex = opts.firstSystem + row
+    if (systemIndex < 0) continue
+    const originY = topPad + row * systemH
+    const isCursor = opts.highlightCursor && systemIndex === currentSystem
+    const frame = drawSystemFrame(
+      ctx,
+      originY,
+      layout,
+      systemIndex,
+      isCursor,
+      opts.theme,
+      row === 0,
+    )
+    const systemStart = frame.systemStart
+
+    for (let m = 0; m < measuresPerSystem; m++) {
+      const measureStart = systemStart + m * measureSec
+      const measureX = contentLeft + m * measureW
+      const trebleEvents = rhythmEventsForMeasure(rightChords, measureStart, beat, timeSig)
+      const bassEvents = rhythmEventsForMeasure(leftChords, measureStart, beat, timeSig)
+      drawRhythmStaff(ctx, trebleEvents, {
+        clef: 'treble',
+        staffTop: frame.trebleTop,
+        gap,
+        fifths,
+        measureX,
+        measureW,
+        measureTicks,
+        measureStart,
+        beat,
+        time: time ?? -1,
+        showNames: opts.showNames,
+        theme: opts.theme,
+      })
+      drawRhythmStaff(ctx, bassEvents, {
+        clef: 'bass',
+        staffTop: frame.bassTop,
+        gap,
+        fifths,
+        measureX,
+        measureW,
+        measureTicks,
+        measureStart,
+        beat,
+        time: time ?? -1,
+        showNames: opts.showNames,
+        theme: opts.theme,
+      })
+    }
+
+    if (isCursor && time != null) {
+      const playX = contentLeft + frac * contentW
+      const glow = ctx.createLinearGradient(playX - 14, 0, playX + 14, 0)
+      glow.addColorStop(0, 'rgba(255,122,50,0)')
+      glow.addColorStop(0.5, 'rgba(255,122,50,0.32)')
+      glow.addColorStop(1, 'rgba(255,122,50,0)')
+      ctx.fillStyle = glow
+      ctx.fillRect(playX - 14, frame.trebleTop - gap * 0.5, 28, frame.bassBottom - frame.trebleTop + gap)
+      ctx.strokeStyle = 'rgba(255,150,80,0.95)'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(playX, frame.trebleTop - gap * 0.4)
+      ctx.lineTo(playX, frame.bassBottom + gap * 0.4)
+      ctx.stroke()
+    }
+  }
 }
 
 /**
@@ -452,28 +892,15 @@ export function drawScrollingSheet(
   sheetTheme: SheetTheme = 'light',
 ) {
   const theme = THEMES[sheetTheme === 'dark' ? 'dark' : 'light']
-  const key = detectKeySignature(notes)
-  const layout = pageLayout(w, keyboardTop, key.fifths)
-  const {
-    gap,
-    systems,
-    systemH,
-    topPad,
-    contentLeft,
-    contentW,
-    systemSec,
-    pxPerSec,
-    staffRight,
-    fifths,
-  } = layout
+  const model = buildSheetModel(notes)
+  const layout = pageLayout(w, keyboardTop - 4, model.fifths, model.bpm, model.timeSig, 4)
+  const { systems, systemSec } = layout
 
   const t = Math.max(0, time)
   const currentSystem = Math.floor(t / systemSec)
-  const frac = (t / systemSec) - currentSystem
   // Page stays still; when the cursor enters the penultimate row, that row becomes first.
   const pageStep = Math.max(1, systems - 2)
   const pageStart = Math.floor(currentSystem / pageStep) * pageStep
-  const cursorRow = currentSystem - pageStart
 
   ctx.save()
   ctx.beginPath()
@@ -483,63 +910,81 @@ export function drawScrollingSheet(
   ctx.fillStyle = theme.page
   ctx.fillRect(0, 0, w, keyboardTop)
 
-  for (let row = 0; row < systems; row++) {
-    const systemIndex = pageStart + row
-    if (systemIndex < 0) continue
-    const originY = topPad + row * systemH
-    if (originY > keyboardTop) continue
-
-    const frame = drawSystemFrame(ctx, originY, layout, systemIndex, row === cursorRow, theme)
-    const systemStart = frame.systemStart
-    const systemEnd = systemStart + systemSec
-
-    for (const note of notes) {
-      if (note.end < systemStart || note.start > systemEnd) continue
-      const clef = note.hand === 'left' ? 'bass' : 'treble'
-      const staffTop = clef === 'bass' ? frame.bassTop : frame.trebleTop
-      const startClamped = Math.max(note.start, systemStart)
-      const endClamped = Math.min(note.end, systemEnd)
-      const x = contentLeft + (startClamped - systemStart) * pxPerSec
-      const xEnd = contentLeft + (endClamped - systemStart) * pxPerSec
-      if (x > staffRight + 10 || xEnd < contentLeft - 10) continue
-      const y = pitchY(note.midi, clef, staffTop, gap, fifths)
-      const active = time >= note.start && time < note.end
-      drawLedger(ctx, x, note.midi, clef, staffTop, gap, fifths, theme)
-      if (xEnd > x + gap * 0.6) {
-        ctx.fillStyle = rgba(note.color, active ? theme.sustainActive : theme.sustainIdle)
-        ctx.fillRect(x, y - gap * 0.16, Math.min(staffRight, xEnd) - x, gap * 0.32)
-      }
-      if (note.start >= systemStart && note.start < systemEnd) {
-        drawNoteHead(
-          ctx,
-          x,
-          y,
-          gap,
-          note.color,
-          active,
-          noteAccidental(note.midi, fifths),
-          showNames ? noteLabel(note.midi, false) : null,
-          theme,
-        )
-      }
-    }
-
-    if (row === cursorRow) {
-      const playX = contentLeft + frac * contentW
-      const glow = ctx.createLinearGradient(playX - 14, 0, playX + 14, 0)
-      glow.addColorStop(0, 'rgba(255,122,50,0)')
-      glow.addColorStop(0.5, 'rgba(255,122,50,0.32)')
-      glow.addColorStop(1, 'rgba(255,122,50,0)')
-      ctx.fillStyle = glow
-      ctx.fillRect(playX - 14, frame.trebleTop - gap * 0.5, 28, frame.bassBottom - frame.trebleTop + gap)
-      ctx.strokeStyle = 'rgba(255,150,80,0.95)'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(playX, frame.trebleTop - gap * 0.4)
-      ctx.lineTo(playX, frame.bassBottom + gap * 0.4)
-      ctx.stroke()
-    }
-  }
+  drawSystemsBlock(ctx, model, layout, {
+    firstSystem: pageStart,
+    rows: systems,
+    showNames,
+    theme,
+    playTime: t,
+    highlightCursor: true,
+  })
 
   ctx.restore()
+}
+
+export type SheetPrintInfo = {
+  bpm: number
+  timeSigLabel: string
+  totalPages: number
+  systemsPerPage: number
+  totalSystems: number
+}
+
+/**
+ * Render one print page of the scrolling sheet (always light theme) onto a canvas.
+ * Same notation engine as the live view — only pagination and theme differ.
+ */
+export function renderSheetPrintPage(
+  notes: NoteEvent[],
+  opts: {
+    width: number
+    height: number
+    pageIndex: number
+    systemsPerPage?: number
+    showNames?: boolean
+  },
+): { canvas: HTMLCanvasElement; info: SheetPrintInfo } {
+  const systemsPerPage = Math.max(1, opts.systemsPerPage ?? 3)
+  const model = buildSheetModel(notes)
+  // Keep system geometry identical on every page (including the last short page).
+  const layout = pageLayout(opts.width, opts.height, model.fifths, model.bpm, model.timeSig, systemsPerPage)
+  const measureCount = Math.max(1, Math.ceil(model.tEnd / layout.measureSec))
+  const totalSystems = Math.max(1, Math.ceil(measureCount / layout.measuresPerSystem))
+  const totalPages = Math.max(1, Math.ceil(totalSystems / systemsPerPage))
+  const pageIndex = Math.max(0, Math.min(opts.pageIndex, totalPages - 1))
+  const firstSystem = pageIndex * systemsPerPage
+  const rows = Math.min(systemsPerPage, totalSystems - firstSystem)
+
+  const scale = 2
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(opts.width * scale)
+  canvas.height = Math.round(opts.height * scale)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas unavailable')
+  ctx.scale(scale, scale)
+
+  const theme = THEMES.light
+  // Print: pure white paper (no cream wash).
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, opts.width, opts.height)
+
+  drawSystemsBlock(ctx, model, layout, {
+    firstSystem,
+    rows,
+    showNames: opts.showNames ?? false,
+    theme,
+    playTime: null,
+    highlightCursor: false,
+  })
+
+  return {
+    canvas,
+    info: {
+      bpm: model.bpm,
+      timeSigLabel: `${model.timeSig.numerator}/${model.timeSig.denominator}`,
+      totalPages,
+      systemsPerPage,
+      totalSystems,
+    },
+  }
 }
