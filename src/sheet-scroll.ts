@@ -997,8 +997,9 @@ function drawSystemsBlock(
 
 /**
  * Draw wrapped grand-staff systems filling the area above the keyboard.
- * No scrolling: the playhead walks system by system. When it reaches the
- * penultimate visible system, that system jumps to the top of the page.
+ * No scrolling: the playhead walks system by system. When it finishes the
+ * last-but-one visible system (third of four), the page advances and that
+ * next system jumps to the top.
  */
 export function drawScrollingSheet(
   ctx: CanvasRenderingContext2D,
@@ -1015,8 +1016,8 @@ export function drawScrollingSheet(
 
   const t = Math.max(0, time)
   const currentSystem = Math.floor(t / systemSec)
-  // Page stays still; when the cursor enters the penultimate row, that row becomes first.
-  const pageStep = Math.max(1, systems - 2)
+  // Keep one system of lookahead: advance after the 3rd of 4 visible rows.
+  const pageStep = Math.max(1, systems - 1)
   const pageStart = Math.floor(currentSystem / pageStep) * pageStep
 
   ctx.save()
