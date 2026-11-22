@@ -11,7 +11,13 @@ import {
   type SearchVideo,
 } from './api'
 import { demoNotes } from './demo'
-import { KEYBOARD_DEFAULT_KEYS, KEYBOARD_MAX_MIDI, KEYBOARD_MIN_MIDI, Visualizer } from './engine'
+import {
+  KEYBOARD_DEFAULT_KEYS,
+  KEYBOARD_MAX_MIDI,
+  KEYBOARD_MIN_MIDI,
+  Visualizer,
+  type ViewMode,
+} from './engine'
 import {
   ROOT_FOLDER_ID,
   countLibrarySongs,
@@ -88,6 +94,8 @@ const keysRightMoreBtn = el<HTMLButtonElement>('keys-right-more')
 const keysHintEl = el<HTMLParagraphElement>('keys-hint')
 const namesBtn = el<HTMLButtonElement>('names')
 const handsBtn = el<HTMLButtonElement>('hands')
+const viewFallingBtn = el<HTMLButtonElement>('view-falling')
+const viewSheetBtn = el<HTMLButtonElement>('view-sheet')
 const zoomBtn = el<HTMLButtonElement>('zoom')
 const audioBtn = el<HTMLButtonElement>('audio')
 const soundSourceBtn = el<HTMLButtonElement>('sound-source')
@@ -305,6 +313,16 @@ handsBtn.setAttribute('aria-pressed', handsOn ? 'true' : 'false')
 const zoomOn = localStorage.getItem('pianosmith.zoom') === '1'
 viz.setZoom(zoomOn)
 zoomBtn.setAttribute('aria-pressed', zoomOn ? 'true' : 'false')
+
+function applyViewMode(mode: ViewMode) {
+  const next: ViewMode = mode === 'sheet' ? 'sheet' : 'falling'
+  viz.setViewMode(next)
+  viewFallingBtn.setAttribute('aria-pressed', next === 'falling' ? 'true' : 'false')
+  viewSheetBtn.setAttribute('aria-pressed', next === 'sheet' ? 'true' : 'false')
+  localStorage.setItem('pianosmith.viewMode', next)
+}
+
+applyViewMode(localStorage.getItem('pianosmith.viewMode') === 'sheet' ? 'sheet' : 'falling')
 {
   const rawLo = localStorage.getItem('pianosmith.keyLo')
   const rawHi = localStorage.getItem('pianosmith.keyHi')
@@ -1802,6 +1820,15 @@ handsBtn.addEventListener('click', () => {
   handsBtn.setAttribute('aria-pressed', next ? 'true' : 'false')
   viz.setShowHands(next)
   localStorage.setItem('pianosmith.hands', next ? '1' : '0')
+})
+
+viewFallingBtn.addEventListener('click', () => {
+  applyViewMode('falling')
+  fit()
+})
+viewSheetBtn.addEventListener('click', () => {
+  applyViewMode('sheet')
+  fit()
 })
 
 zoomBtn.addEventListener('click', () => {

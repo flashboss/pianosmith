@@ -1,4 +1,5 @@
 import type { NoteEvent } from './types'
+import { drawScrollingSheet } from './sheet-scroll'
 import {
   bestFingerAssignment,
   canFingerNotes,
@@ -11,6 +12,8 @@ import {
   rgba,
   whiteIndex,
 } from './theory'
+
+export type ViewMode = 'falling' | 'sheet'
 
 interface Spark {
   x: number
@@ -508,6 +511,7 @@ export class Visualizer {
   private title = ''
   private showNames = false
   private showHands = true
+  private viewMode: ViewMode = 'falling'
   private zoom = false
   private keyLo = KEYBOARD_DEFAULT_LO
   private keyHi = KEYBOARD_DEFAULT_LO + KEYBOARD_DEFAULT_KEYS - 1
@@ -529,8 +533,12 @@ export class Visualizer {
   setViewport(w: number, h: number) {
     this.w = w
     this.h = h
-    // Shorter keyboard band so black keys (⅔ white) read clearly with rounded tips.
-    this.keyboardTop = h * 0.8
+    this.applyKeyboardTop()
+  }
+
+  private applyKeyboardTop() {
+    // Same keyboard band in both view modes — sheet wraps systems into the space above.
+    this.keyboardTop = this.h * 0.8
   }
 
   setShowNames(show: boolean) {
@@ -539,6 +547,15 @@ export class Visualizer {
 
   setShowHands(show: boolean) {
     this.showHands = show
+  }
+
+  setViewMode(mode: ViewMode) {
+    this.viewMode = mode === 'sheet' ? 'sheet' : 'falling'
+    this.applyKeyboardTop()
+  }
+
+  getViewMode(): ViewMode {
+    return this.viewMode
   }
 
   /** Set visible MIDI range (inclusive). Trims/grows from either edge. */
@@ -662,7 +679,11 @@ export class Visualizer {
     ctx.fillRect(0, 0, this.w, this.h)
 
     const active = this.activeNotes(time)
-    this.drawNotes(time, layout)
+    if (this.viewMode === 'sheet') {
+      drawScrollingSheet(ctx, this.notes ?? [], time, this.w, this.keyboardTop, this.showNames)
+    } else {
+      this.drawNotes(time, layout)
+    }
     this.drawKeyboard(layout, active)
     this.drawFire(layout, active)
     this.drawSparks(step)
